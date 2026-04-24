@@ -23,12 +23,12 @@ Produces audit‑ready outputs for compliance and reporting
 
 ### 🧠 Key Features
 Predictive Maintenance
-AI‑driven detection of early warnings and abnormal patterns
+- AI‑driven detection of early warnings and abnormal patterns
 Real‑Time Monitoring
-Continuous ingestion of equipment telemetry and system signals
+- Continuous ingestion of equipment telemetry and system signals
 SOP‑Guided Execution
-Step‑by‑step, validated maintenance workflows for consistent execution
+- Step‑by‑step, validated maintenance workflows for consistent execution
 Compliance & Audit Readiness
-Auto‑generated logs, evidence, and reports aligned with standards
+- Auto‑generated logs, evidence, and reports aligned with standards
 Scalable Azure Architecture
-Cloud‑native, secure, and enterprise‑ready design
+- Cloud‑native, secure, and enterprise‑ready design
