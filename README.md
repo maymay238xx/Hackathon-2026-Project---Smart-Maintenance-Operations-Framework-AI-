@@ -1,4 +1,4 @@
-# L'Avenir
+# <img width="1024" height="1024" alt="L&#39;Avenir Logo" src="https://github.com/user-attachments/assets/9eb955c3-d094-44ce-9427-55ea765477d9" /> 
 L'Avenir – SMOF is an AI‑driven Smart Maintenance Operational Framework that uses Azure services to shift maintenance from reactive fixes to predictive, guided, and audit‑ready workflows.
 
 ## 🚀 Azure Hackathon Project
@@ -33,9 +33,7 @@ SOP‑Guided Execution
 Step‑by‑step, validated maintenance workflows for consistent execution
 
 Compliance & Audit Readiness
-Auto‑generated logs, evidence, and reports aligned with standards<img width="1024" height="1024" alt="L&#39;Avenir Logo" src="https://github.com/user-attachments/assets/9eb955c3-d094-44ce-9427-55ea765477d9" />
-<img width="1024" height="1024" alt="L&#39;Avenir Logo" src="https://github.com/user-attachments/assets/c962e954-4575-49a2-b2e4-8be5bdbdb98d" />
-
+Auto‑generated logs, evidence, and reports aligned with standards
 
 Scalable Azure Architecture
 Cloud‑native, secure, and enterprise‑ready design
