@@ -1,4 +1,4 @@
-<img width="200" alt="L&#39;Avenir Logo" src="https://github.com/user-attachments/assets/026a7ffa-88a0-4753-ab4d-57c75e774af8" />
+<img width="100" alt="L&#39;Avenir Logo" src="https://github.com/user-attachments/assets/026a7ffa-88a0-4753-ab4d-57c75e774af8" />
 
 ## L'Avenir – Smart Maintenance Operational Framework (SMOF)
 ### 🚀 Azure Hackathon Project
