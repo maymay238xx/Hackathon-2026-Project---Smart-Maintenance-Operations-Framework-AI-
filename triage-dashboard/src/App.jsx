@@ -349,7 +349,8 @@ function AuditDashboard({ data, onClose }) {
                       <td className="mono">{r.ticket_id||'—'}</td>
                       <td><span className={`sev-badge sev-${(r.severity||'').toLowerCase()}`}>{r.severity}</span></td>
                       <td>{r.department}</td>
-                      <td style={{fontSize:'10px'}}>{r.accepted_by||'—'}</td>
+                      {/* <td style={{fontSize:'10px'}}>{r.accepted_by||'—'}</td> */}
+                      <td style={{fontSize:'12px',fontWeight:'500'}}>{r.accepted_by?String(r.accepted_by).split(':')[String(r.accepted_by).split(':').length-1].trim():'—'}</td>
                       <td><span className={`ent-status-badge ent-status--${r.status==='COMPLETE'?'complete':r.record_type==='ESCALATION'?'escalated':'progress'}`}>{r.status}</span></td>
                     </tr>
                   ))}
