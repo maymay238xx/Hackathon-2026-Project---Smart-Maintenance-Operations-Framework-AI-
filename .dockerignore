@@ -1,0 +1,14 @@
+.venv
+.git
+__pycache__
+*.pyc
+*.ipynb
+.DS_Store
+triage-dashboard/node_modules
+triage-dashboard/dist
+*.tar.gz
+SOP Docs
+agents
+fake_data.csv
+deploy.sh
+download_pdfs.py

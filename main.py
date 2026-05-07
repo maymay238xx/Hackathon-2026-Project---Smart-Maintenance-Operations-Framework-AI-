@@ -14,6 +14,7 @@ from predictive_agent import run_predictive_analysis
 from rag_agent import run_sop_chat, knowledge_base
 from agent4_chatbot import run_chatbot
 from audit_agent import build_audit_register
+from agent2_ticketing import create_ticket
 from fabric_client import (
     load_sensor_data, load_department_data,
     write_audit_record, health_check as fabric_health_check,
@@ -48,15 +49,13 @@ THRESHOLDS = {
     "humidity_pct":   {"base": 45.0, "warning_delta": 5.0,  "critical_abs": 58.0},
 }
 
-
 _SESSION = {
-    "anomalies":  [],   # Current Kanban — populated by /run-predictive-scan
-    "history":    [],   # Accepted work orders
-    "escalated":  [],   # Escalated items with manager outcomes
-    "completed":  {},   # {log_id: completed_at timestamp}
-    "last_scan":  None, # ISO timestamp of last scan
+    "anomalies":  [],
+    "history":    [],
+    "escalated":  [],
+    "completed":  {},
+    "last_scan":  None,
 }
-
 
 EQUIPMENT_DEPT_MAP = {
     "ewad": "MECH", "30rb": "MECH", "aquasnap": "MECH", "chiller": "MECH",
@@ -70,7 +69,6 @@ EQUIPMENT_DEPT_MAP = {
     "bms": "BMS", "sensor": "BMS",
 }
 
-
 def resolve_department_id(equipment_id: str) -> str:
     eq_lower = equipment_id.lower()
     if "_" in equipment_id:
@@ -82,7 +80,6 @@ def resolve_department_id(equipment_id: str) -> str:
             return dept
     return "MECH"
 
-
 def calculate_status(row):
     for s, l in THRESHOLDS.items():
         if float(row.get(s, 0)) >= l["critical_abs"]: return "Red"
@@ -90,12 +87,10 @@ def calculate_status(row):
         if abs(float(row.get(s, 0)) - l["base"]) > l["warning_delta"]: return "Amber"
     return "Green"
 
-
 def make_ticket_id(equipment_id, department):
     return "WRK-" + hashlib.sha256(
         f"{equipment_id}:{department}".encode()
     ).hexdigest()[:5].upper()
-
 
 def calculate_trends(df):
     RANK = {"Red": 3, "Amber": 2, "Green": 1}
@@ -113,44 +108,45 @@ def calculate_trends(df):
             trends[eq_id] = "up" if lv > pv * 1.03 else "down" if lv < pv * 0.97 else "stable"
     return trends
 
-
-# Pydantic models 
 class TriageDecision(BaseModel):
     equipment_id:    str
-    decision:        str          # "Accept" | "Escalate"
+    decision:        str
     escalate_reason: Optional[str] = None
     severity:        Optional[str] = "Unknown"
     department:      Optional[str] = "Unassigned"
     accepted_by:     Optional[str] = "Unknown"
-
+    fault_type:      Optional[str] = ""
+    fault_value:     Optional[float] = None
+    issue_summary:   Optional[str] = ""
+    building_id:     Optional[str] = ""
 
 class ManagerDecision(BaseModel):
     equipment_id:   str
-    decision:       str           # "Accept" | "Decline"
+    decision:       str
     decline_reason: Optional[str] = None
     severity:       Optional[str] = "Unknown"
     department:     Optional[str] = "Unassigned"
     fault_context:  Optional[str] = ""
     decided_by:     Optional[str] = "Manager"
-
+    fault_type:     Optional[str] = ""
+    fault_value:    Optional[float] = None
+    issue_summary:  Optional[str] = ""
+    building_id:    Optional[str] = ""
 
 class SOPChatMessage(BaseModel):
     role: str
     content: str
-
 
 class SOPChatRequest(BaseModel):
     messages: list[SOPChatMessage]
     equipment_id: Optional[str] = ""
     fault_context: Optional[str] = ""
 
-
 class ChatbotRequest(BaseModel):
     messages: list[SOPChatMessage]
     equipment_id: Optional[str] = ""
     fault_context: Optional[str] = ""
     sop_context: Optional[str] = ""
-
 
 class AuditEntry(BaseModel):
     id: int
@@ -163,7 +159,6 @@ class AuditEntry(BaseModel):
     note: Optional[str] = None
     accepted_by: Optional[str] = None
 
-
 class EscalatedEntry(BaseModel):
     equipment_id: str
     severity: str
@@ -172,12 +167,10 @@ class EscalatedEntry(BaseModel):
     assigned_department: Optional[str] = "Unknown"
     escalated_by: Optional[str] = None
 
-
 class AuditRequest(BaseModel):
     accepted: list[AuditEntry]
     escalated: list[EscalatedEntry]
     completed: list[int] = []
-
 
 class HandoverRequest(BaseModel):
     accepted: list[AuditEntry]
@@ -185,41 +178,9 @@ class HandoverRequest(BaseModel):
     completed: list[int] = []
     remaining: list[dict] = []
 
-
-# Mocks 
-def simulate_ticketing_agent(equipment_id, severity, department, accepted_by="Unknown"):
-    tid = make_ticket_id(equipment_id, department)
-    pri = {"Critical": "P1 - Urgent", "Warning": "P2 - High"}.get(severity, "P3 - Normal")
-    print(f"\n🎫 [AGENT 2] {tid} | {pri} | {equipment_id} → {department} | by {accepted_by}")
-    return {
-        "ticket_id":     tid,
-        "system":        "ServiceNow (Mock)",
-        "priority":      pri,
-        "assigned_to":   department,
-        "equipment_id":  equipment_id,
-        "status":        "Dispatched",
-        "accepted_by":   accepted_by,
-        "dispatched_at": datetime.utcnow().isoformat() + "Z",
-    }
-
-
-def simulate_teams_notification(ticket):
-    msg = (f"🚨 {ticket['ticket_id']} — {ticket['equipment_id']} "
-           f"| {ticket['priority']} | {ticket['assigned_to']} "
-           f"| Accepted by: {ticket['accepted_by']}")
-    print(f"📣 [TEAMS] {msg}")
-    return {
-        "channel": "Maintenance Ops",
-        "system":  "Microsoft Teams (Mock)",
-        "message": msg,
-        "sent_at": datetime.utcnow().isoformat() + "Z",
-    }
-
-
-# Routes
 @app.get("/health")
 async def health_check():
-   
+
     try:
         import asyncio, concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -233,20 +194,15 @@ async def health_check():
         "fabric":  fabric_status,
     }
 
-
 @app.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):
-    """Returns current user identity."""
+    
     check_permission(user, "get_me")
     return user
 
-
 @app.post("/run-predictive-scan")
 async def run_scan(user: dict = Depends(get_current_user)):
-    """
-    Roles: dispatcher, manager, admin, agent.call
-    Technicians and auditors cannot trigger scans.
-    """
+    
     check_permission(user, "run_predictive_scan")
     print(f"\n─── 🔍 SCAN by {user['name']} ({user['role']}) ───")
     try:
@@ -304,7 +260,7 @@ async def run_scan(user: dict = Depends(get_current_user)):
             })
 
         ai_result["anomalies_detected"].extend(healthy_rows)
-        # Save to session store so all users see the same Kanban
+
         _SESSION["anomalies"] = ai_result["anomalies_detected"]
         _SESSION["last_scan"] = datetime.utcnow().isoformat()
         return {"status": "Success", "data": ai_result}
@@ -313,17 +269,12 @@ async def run_scan(user: dict = Depends(get_current_user)):
         print(f"❌ SCAN ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/triage-decision")
 async def process_triage(action: TriageDecision, user: dict = Depends(get_current_user)):
-    """
-    Roles: dispatcher, manager, admin
-    Technicians, auditors, and agents cannot triage.
-    """
+    
     check_permission(user, "triage_decision")
     print(f"\n📝 [TRIAGE] {action.decision} → {action.equipment_id} | by {user['name']} ({user['role']})")
 
-    # Override accepted_by with the verified identity — don't trust the client
     action.accepted_by = user["name"]
 
     if action.severity == "Healthy":
@@ -352,7 +303,7 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             "ui_id":              f"{action.equipment_id}-esc-{int(time.time())}",
         }
         _SESSION["escalated"].append(escalated_item)
-        
+
         _SESSION["anomalies"] = [a for a in _SESSION["anomalies"] if a.get("equipment_id") != action.equipment_id]
         return {
             "status":            "Escalated",
@@ -365,8 +316,16 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
         }
 
     if action.decision == "Accept":
-        ticket       = simulate_ticketing_agent(action.equipment_id, action.severity, action.department, user["name"])
-        notification = simulate_teams_notification(ticket)
+        ticket = create_ticket(
+            equipment_id  = action.equipment_id,
+            severity      = action.severity,
+            department    = action.department,
+            accepted_by   = user["name"],
+            fault_type    = action.fault_type or "",
+            fault_value   = action.fault_value,
+            issue_summary = action.issue_summary or "",
+            building_id   = action.building_id or "",
+        )
         import time
         log_id = int(time.time() * 1000)
         history_item = {
@@ -379,34 +338,35 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             "accepted_by": user["name"],
         }
         _SESSION["history"].append(history_item)
-        
         _SESSION["anomalies"] = [a for a in _SESSION["anomalies"] if a.get("equipment_id") != action.equipment_id]
         return {
             "status":      "Processed",
             "equipment":   action.equipment_id,
             "ticket":      ticket,
-            "notification": notification,
             "log_id":      log_id,
         }
 
     raise HTTPException(status_code=400, detail=f"Unknown decision: {action.decision}")
 
-
 @app.post("/manager-decision")
 async def manager_decision(action: ManagerDecision, user: dict = Depends(get_current_user)):
-    """
-    Roles: manager, admin ONLY
-    Dispatchers cannot access this endpoint.
-    """
+    
     check_permission(user, "manager_decision")
     print(f"\n👔 [MANAGER] {action.decision} → {action.equipment_id} | by {user['name']} ({user['role']})")
 
-    # Override decided_by with verified identity
     action.decided_by = user["name"]
 
     if action.decision == "Accept":
-        ticket       = simulate_ticketing_agent(action.equipment_id, action.severity, action.department, f"Manager: {user['name']}")
-        notification = simulate_teams_notification(ticket)
+        ticket = create_ticket(
+            equipment_id  = action.equipment_id,
+            severity      = action.severity,
+            department    = action.department,
+            accepted_by   = f"Manager: {user['name']}",
+            fault_type    = action.fault_type or "",
+            fault_value   = action.fault_value,
+            issue_summary = action.issue_summary or "",
+            building_id   = action.building_id or "",
+        )
         import time
         log_id = int(time.time() * 1000)
         history_item = {
@@ -419,7 +379,6 @@ async def manager_decision(action: ManagerDecision, user: dict = Depends(get_cur
             "accepted_by": f"Manager: {user['name']}",
         }
         _SESSION["history"].append(history_item)
-        # Update escalated item with manager outcome
         for item in _SESSION["escalated"]:
             if item.get("equipment_id") == action.equipment_id and item.get("manager_outcome") is None:
                 item["manager_outcome"] = "accepted"
@@ -427,26 +386,25 @@ async def manager_decision(action: ManagerDecision, user: dict = Depends(get_cur
                 item["decided_by"]      = user["name"]
                 break
         return {
-            "status":      "Accepted by Manager",
-            "equipment":   action.equipment_id,
-            "decided_by":  user["name"],
+            "status":          "Accepted by Manager",
+            "equipment":       action.equipment_id,
+            "decided_by":      user["name"],
             "decided_by_role": user["role"],
-            "ticket":      ticket,
-            "notification": notification,
-            "log_id":      log_id,
+            "ticket":          ticket,
+            "log_id":          log_id,
         }
 
     if action.decision == "Decline":
         if not action.decline_reason:
             raise HTTPException(status_code=400, detail="A decline reason is required.")
-        # Update escalated item with decline outcome
+
         for item in _SESSION["escalated"]:
             if item.get("equipment_id") == action.equipment_id and item.get("manager_outcome") is None:
                 item["manager_outcome"]    = "declined"
                 item["decided_by"]         = user["name"]
                 item["decline_reason"]     = action.decline_reason
                 break
-        # Return the item to Kanban with a note
+
         returned = {
             "equipment_id":        action.equipment_id,
             "severity":            action.severity or "Warning",
@@ -473,13 +431,9 @@ async def manager_decision(action: ManagerDecision, user: dict = Depends(get_cur
 
     raise HTTPException(status_code=400, detail=f"Unknown decision: {action.decision}")
 
-
 @app.post("/sop-chat")
 async def sop_chat(request: SOPChatRequest, user: dict = Depends(get_current_user)):
-    """
-    Roles: dispatcher, manager, technician, admin, agent.call
-    Auditors cannot access SOP chat.
-    """
+    
     check_permission(user, "sop_chat")
     try:
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -489,13 +443,9 @@ async def sop_chat(request: SOPChatRequest, user: dict = Depends(get_current_use
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/agent3-retrieve")
 async def agent3_retrieve(request: SOPChatRequest, user: dict = Depends(get_current_user)):
-    """
-    Roles: agent.call, admin ONLY
-    This is an internal agent endpoint — humans should not call it directly.
-    """
+    
     check_permission(user, "agent3_retrieve")
     try:
         latest = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
@@ -504,12 +454,9 @@ async def agent3_retrieve(request: SOPChatRequest, user: dict = Depends(get_curr
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/agent4-chat")
 async def agent4_chat(request: ChatbotRequest, user: dict = Depends(get_current_user)):
-    """
-    Roles: dispatcher, manager, technician, admin, agent.call
-    """
+    
     check_permission(user, "agent4_chat")
     try:
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -520,13 +467,9 @@ async def agent4_chat(request: ChatbotRequest, user: dict = Depends(get_current_
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/generate-audit")
 async def generate_audit(request: AuditRequest, user: dict = Depends(get_current_user)):
-    """
-    Roles: manager, auditor, admin, agent.call
-    Dispatchers and technicians cannot generate audit reports.
-    """
+    
     check_permission(user, "generate_audit")
     print(f"\n📋 [AGENT 5 — AUDIT] requested by {user['name']} ({user['role']})")
     try:
@@ -542,12 +485,9 @@ async def generate_audit(request: AuditRequest, user: dict = Depends(get_current
         print(f"❌ [AGENT 5] {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/generate-handover")
 async def generate_handover(request: HandoverRequest, user: dict = Depends(get_current_user)):
-    """
-    Roles: dispatcher, manager, admin, agent.call
-    """
+    
     check_permission(user, "generate_handover")
     print(f"\n📋 [HANDOVER] by {user['name']} ({user['role']})")
     try:
@@ -584,10 +524,11 @@ async def generate_handover(request: HandoverRequest, user: dict = Depends(get_c
             ],
             "remaining_anomalies": request.remaining,
         }
-        prompt = """Write a shift handover note for the incoming L'Avenir maintenance team.
-Use exactly these CAPS section headers on their own lines:
-SHIFT SUMMARY / RESOLVED THIS SHIFT / ACTIVE WORK ORDERS / ESCALATIONS PENDING / WATCH LIST FOR NEXT SHIFT
-Under 200 words. Second person for watch list. Include who accepted each ticket where available."""
+        prompt = (
+            "You are a shift handover assistant. Given shift data, write a concise handover report with 4 sections: "
+            "SHIFT SUMMARY / RESOLVED THIS SHIFT / ACTIVE WORK ORDERS / ESCALATIONS PENDING / WATCH LIST FOR NEXT SHIFT. "
+            "Under 200 words. Second person for watch list. Include who accepted each ticket where available."
+        )
         resp = _az.chat.completions.create(
             model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"), max_tokens=350,
             messages=[{"role":"system","content":prompt},
@@ -598,14 +539,9 @@ Under 200 words. Second person for watch list. Include who accepted each ticket 
         print(f"❌ [HANDOVER] {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ── Session state endpoints ───────────────────────────────────────────────────
 @app.get("/session-state")
 async def get_session_state(request: Request):
-    """
-    Returns shared session state. No auth required — state is not sensitive.
-    Called on every login so all users see the same Kanban without rescanning.
-    """
+    
     return {
         "anomalies":  _SESSION["anomalies"],
         "history":    _SESSION["history"],
@@ -614,20 +550,18 @@ async def get_session_state(request: Request):
         "last_scan":  _SESSION["last_scan"],
     }
 
-
 @app.post("/session-state/complete")
 async def mark_job_complete(payload: dict, request: Request):
-    """Marks a work order complete in the shared session."""
+    
     log_id  = str(payload.get("log_id", ""))
     done_at = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
     if log_id:
         _SESSION["completed"][log_id] = done_at
     return {"status": "ok"}
 
-
 @app.post("/session-state/clear")
 async def clear_session(user: dict = Depends(get_current_user)):
-    """Resets the full session — admin only. Use between shifts."""
+    
     if user.get("role") not in ("admin", "manager"):
         raise HTTPException(status_code=403, detail="Admin or Manager role required")
     _SESSION["anomalies"]  = []
@@ -638,11 +572,8 @@ async def clear_session(user: dict = Depends(get_current_user)):
     print(f"🔄 [SESSION] Cleared by {user['name']}")
     return {"status": "cleared"}
 
-
-# ── Serve React frontend ───────────────────────────────────────────────────────
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
-# All API route prefixes — catch-all must not intercept these
 API_PREFIXES = (
     "health", "me", "run-", "triage-", "manager-",
     "sop-", "agent", "generate-", "session-",
@@ -653,7 +584,7 @@ if os.path.exists(STATIC_DIR):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        # Let API routes fall through — only serve frontend for non-API paths
+
         if full_path.startswith(API_PREFIXES):
             raise HTTPException(status_code=404, detail="API endpoint not found")
         index = os.path.join(STATIC_DIR, "index.html")

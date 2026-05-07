@@ -201,16 +201,16 @@ function ManagerDashboard({ escalated, onClose, onAccept, onDecline }) {
         <p className="k-summary">{item.issue_summary}</p>
         {isOpen?(
           <div className="decline-row">
-            <input className="decline-input" placeholder="Decline reason..." value={declineReason[idx]||''}
-              onChange={e=>setDeclineReason(p=>({...p,[idx]:e.target.value}))}
-              onKeyDown={e=>e.key==='Enter'&&onDecline(item,idx,declineReason[idx])}/>
-            <button className="k-btn k-confirm" onClick={()=>onDecline(item,idx,declineReason[idx])}>Submit</button>
-            <button className="k-btn k-cancel" onClick={()=>setDeclineOpen(p=>({...p,[idx]:false}))}>✕</button>
+            <input className="decline-input" placeholder="Decline reason..." value={declineReason[item.equipment_id]||''}
+              onChange={e=>setDeclineReason(p=>({...p,[item.equipment_id]:e.target.value}))}
+              onKeyDown={e=>e.key==='Enter'&&onDecline(item,declineReason[item.equipment_id])}/>
+            <button className="k-btn k-confirm" onClick={()=>onDecline(item,declineReason[item.equipment_id])}>Submit</button>
+            <button className="k-btn k-cancel" onClick={()=>setDeclineOpen(p=>({...p,[item.equipment_id]:false}))}>✕</button>
           </div>
         ):(
           <div className="btn-row">
-            <button className="k-btn k-accept" onClick={()=>onAccept(item,idx)}>Accept &amp; Create Ticket</button>
-            <button className="k-btn k-decline" onClick={()=>setDeclineOpen(p=>({...p,[idx]:true}))}>Decline</button>
+            <button className="k-btn k-accept" onClick={()=>onAccept(item)}>Accept &amp; Create Ticket</button>
+            <button className="k-btn k-decline" onClick={()=>setDeclineOpen(p=>({...p,[item.equipment_id]:true}))}>Decline</button>
           </div>
         )}
       </div>
@@ -575,7 +575,7 @@ function Dashboard() {
     let reason=null
     if(decision==='Escalate'){reason=escalateReason[anomaly.ui_id];if(!reason?.trim()){toast('Please provide an escalation reason.','warn');return}}
     try {
-      const res=await authFetch('/triage-decision',{method:'POST',body:JSON.stringify({equipment_id:anomaly.equipment_id,decision,escalate_reason:reason,severity:anomaly.severity,department:anomaly.assigned_department,accepted_by:currentUser.name})})
+      const res=await authFetch('/triage-decision',{method:'POST',body:JSON.stringify({equipment_id:anomaly.equipment_id,decision,escalate_reason:reason,severity:anomaly.severity,department:anomaly.assigned_department,accepted_by:currentUser.name,fault_type:anomaly.fault_type||'',fault_value:anomaly.fault_value||null,issue_summary:anomaly.issue_summary||'',building_id:anomaly.building_id||''})})
       if(!res.ok){const e=await res.json();toast(e.detail||'Server error','error');return}
       const result=await res.json()
       setAnomalies(prev=>prev.filter(a=>a.ui_id!==anomaly.ui_id))
@@ -592,17 +592,25 @@ function Dashboard() {
     } catch { toast('Error processing decision.','error') }
   }
 
-  const processManagerDecision=async(item,idx,decision,declineReason)=>{
+  const processManagerDecision=async(item,decision,declineReason)=>{
     if(decision==='Decline'&&!declineReason?.trim()){toast('Please provide a decline reason.','warn');return}
     try {
-      const res=await authFetch('/manager-decision',{method:'POST',body:JSON.stringify({equipment_id:item.equipment_id,decision,decline_reason:declineReason,severity:item.severity,department:item.assigned_department,decided_by:currentUser.name})})
+      const res=await authFetch('/manager-decision',{method:'POST',body:JSON.stringify({equipment_id:item.equipment_id,decision,decline_reason:declineReason,severity:item.severity,department:item.assigned_department,decided_by:currentUser.name,fault_type:item.fault_type||'',fault_value:item.fault_value||null,issue_summary:item.issue_summary||'',building_id:item.building_id||''})})
       if(!res.ok){const e=await res.json();toast(e.detail||'Server error','error');return}
       const result=await res.json()
       const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
       const outcome=decision==='Accept'?'accepted':'declined'
-      setEscalated(prev=>prev.map((e,i)=>i===idx?{...e,manager_outcome:outcome,manager_ticket:result.ticket?.ticket_id||null,decided_by:currentUser.name,decided_at:t}:e))
+      setEscalated(prev=>prev.map(e=>
+        e.equipment_id===item.equipment_id && !e.manager_outcome
+          ? {...e,manager_outcome:outcome,manager_ticket:result.ticket?.ticket_id||null,decided_by:currentUser.name,decided_at:t}
+          : e
+      ))
       if(decision==='Accept'){
-        setHistory(prev=>[{id:Date.now(),time:t,equipment:item.equipment_id,type:sev(item.severity),message:`Manager-approved response dispatched to ${item.assigned_department}.`,ticket:result.ticket??null,accepted_by:`Manager: ${currentUser.name}`},...prev])
+        const newLogId = result.log_id || Date.now()
+        setHistory(prev=>{
+          if(prev.some(h=>h.id===newLogId)) return prev
+          return [{id:newLogId,time:t,equipment:item.equipment_id,type:sev(item.severity),message:`Manager-approved response dispatched to ${item.assigned_department}.`,ticket:result.ticket??null,accepted_by:`Manager: ${currentUser.name}`},...prev]
+        })
         toast(`✓ ${item.equipment_id} accepted by manager`,'success')
       } else {
         setAnomalies(prev=>[{...item,ui_id:`${item.equipment_id}-returned-${Date.now()}`,issue_summary:`↩ Returned by manager: "${declineReason}" — ${item.issue_summary}`},...prev])
@@ -733,7 +741,7 @@ function Dashboard() {
   }
 
   if(auditOpen&&auditData) return(<><div className="toast-stack">{toasts.map(t=><div key={t.id} className={`toast toast-${t.type}`}>{t.msg}</div>)}</div><AuditDashboard data={auditData} onClose={()=>setAuditOpen(false)}/></>)
-  if(managerOpen) return(<><div className="toast-stack">{toasts.map(t=><div key={t.id} className={`toast toast-${t.type}`}>{t.msg}</div>)}</div><ManagerDashboard escalated={escalated} onClose={()=>setManagerOpen(false)} onAccept={(item,idx)=>processManagerDecision(item,idx,'Accept',null)} onDecline={(item,idx,reason)=>processManagerDecision(item,idx,'Decline',reason)}/></>)
+  if(managerOpen) return(<><div className="toast-stack">{toasts.map(t=><div key={t.id} className={`toast toast-${t.type}`}>{t.msg}</div>)}</div><ManagerDashboard escalated={escalated} onClose={()=>setManagerOpen(false)} onAccept={(item)=>processManagerDecision(item,'Accept',null)} onDecline={(item,reason)=>processManagerDecision(item,'Decline',reason)}/></>)
 
   return (
     <div className="dash">
@@ -836,12 +844,7 @@ function Dashboard() {
 export default function App() {
   return (
     <MsalProvider instance={msalInstance}>
-      <AuthenticatedTemplate>
-        <Dashboard />
-      </AuthenticatedTemplate>
-      <UnauthenticatedTemplate>
-        <LoginPage />
-      </UnauthenticatedTemplate>
+      <Dashboard />
     </MsalProvider>
   )
 }
