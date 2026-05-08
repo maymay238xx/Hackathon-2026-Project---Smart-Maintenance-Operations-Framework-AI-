@@ -66,6 +66,7 @@ def build_audit_register(
     records = []
 
     for entry in accepted:
+        completed_flag = entry.get("id") in completed
         records.append({
             "record_type":   "WORK_ORDER",
             "equipment_id":  entry.get("equipment"),
@@ -74,11 +75,14 @@ def build_audit_register(
             "severity":      entry.get("type", "").upper(),
             "action_taken":  entry.get("message"),
             "dispatched_at": entry.get("time"),
-            "completed":     entry.get("id") in completed,
-            "completed_at":  entry.get("completedAt") if entry.get("id") in completed else None,
-            "status":        "COMPLETE" if entry.get("id") in completed else "IN_PROGRESS",
+            "completed":     completed_flag,
+            "completed_at":  entry.get("completedAt") if completed_flag else None,
+            "status":        "COMPLETE" if completed_flag else "IN_PROGRESS",
             "department":    entry.get("ticket", {}).get("assigned_to") if entry.get("ticket") else "Unknown",
             "technician_note": entry.get("note"),
+            "accepted_by":   entry.get("accepted_by"),
+            #"markComplete":  entry.get("completed_by") if completed_flag else None,
+            "completed_by":  entry.get("completed_by") or "Unknown" if entry.get("id") in completed else None,
         })
 
     for entry in escalated:

@@ -276,13 +276,13 @@ function AuditDashboard({ data, onClose }) {
   const compliancePct = Math.round((passCount/checks.length)*100)
   const filtered = useMemo(()=>{
     let r=[...records]
-    if(search) r=r.filter(x=>['equipment_id','ticket_id','severity','department','status'].some(k=>(x[k]||'').toLowerCase().includes(search.toLowerCase())))
+    if(search) r=r.filter(x=>['equipment_id','ticket_id','severity','department','status','accepted_by','completed_by'].some(k=>(x[k]||'').toLowerCase().includes(search.toLowerCase())))
     if(sortCol) r.sort((a,b)=>{const av=(a[sortCol]||'').toLowerCase(),bv=(b[sortCol]||'').toLowerCase();return sortDir==='asc'?av.localeCompare(bv):bv.localeCompare(av)})
     return r
   },[records,search,sortCol,sortDir])
   const exportCSV=()=>{
-    const h=['Equipment','Ticket','Severity','Type','Department','Time','Status','Accepted By']
-    const rows=records.map(r=>[r.equipment_id,r.ticket_id||'',r.severity,r.record_type,r.department,r.dispatched_at,r.status,r.accepted_by||''])
+    const h=['Equipment','Ticket','Severity','Type','Department','Time','Status','Accepted By','Completed By','Completed At']
+    const rows=records.map(r=>[r.equipment_id,r.ticket_id||'',r.severity,r.record_type,r.department,r.dispatched_at,r.status,r.accepted_by||'',r.completed_by||'',r.completed_at||''])
     const csv=[h,...rows].map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n')
     const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
     Object.assign(document.createElement('a'),{href:url,download:`audit-${new Date().toISOString().slice(0,10)}.csv`}).click()
@@ -339,7 +339,7 @@ function AuditDashboard({ data, onClose }) {
             </div>
             <div className="ent-table-wrap">
               <table className="ent-table">
-                <thead><tr>{[['equipment_id','Equipment'],['ticket_id','Ticket'],['severity','Severity'],['department','Department'],['accepted_by','Accepted By'],['status','Status']].map(([k,l])=>(
+                <thead><tr>{[['equipment_id','Equipment'],['ticket_id','Ticket'],['severity','Severity'],['department','Department'],['accepted_by','Accepted By'],['completed_by','Completed By'],['status','Status']].map(([k,l])=>(
                   <th key={k} className="ent-th-sortable" onClick={()=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('asc')}}}>{l}</th>
                 ))}</tr></thead>
                 <tbody>
@@ -349,7 +349,8 @@ function AuditDashboard({ data, onClose }) {
                       <td className="mono">{r.ticket_id||'—'}</td>
                       <td><span className={`sev-badge sev-${(r.severity||'').toLowerCase()}`}>{r.severity}</span></td>
                       <td>{r.department}</td>
-                      <td style={{fontSize:'10px'}}>{r.accepted_by||'—'}</td>
+                      <td style={{fontSize:'12px',fontWeight:'500'}}>{r.accepted_by?String(r.accepted_by).split(':')[String(r.accepted_by).split(':').length-1].trim():'—'}</td>
+                      <td style={{fontSize:'12px',fontWeight:'500'}}>{r.completed_by?String(r.completed_by).split(':')[String(r.completed_by).split(':').length-1].trim():'—'}</td>
                       <td><span className={`ent-status-badge ent-status--${r.status==='COMPLETE'?'complete':r.record_type==='ESCALATION'?'escalated':'progress'}`}>{r.status}</span></td>
                     </tr>
                   ))}
@@ -482,12 +483,16 @@ function Dashboard() {
   const { instance, accounts } = useMsal()
   const msalUser = accounts[0]
 
+  const [userName, setUserName] = useState(() => sessionStorage.getItem('userName') || '')
+  const [nameInput, setNameInput] = useState('')
+  const [showNamePrompt, setShowNamePrompt] = useState(false)
+
   const currentUser = useMemo(()=>({
     id:    msalUser?.localAccountId||'unknown',
     name:  msalUser?.name||msalUser?.username?.split('@')[0]||'User',
     email: msalUser?.username||'',
     role:  msalUser?.idTokenClaims?.roles?.[0]||'dispatcher',
-  }),[msalUser])
+  }),[msalUser, userName])
 
   const getToken = useCallback(async()=>{
     try {
@@ -521,6 +526,18 @@ function Dashboard() {
   const { toasts, add: toast } = useToasts()
 
   const openSOP=(ctx=null)=>{setSopContext(ctx);setSopOpen(true)}
+
+  useEffect(()=>{
+    if(!currentUser.name) setShowNamePrompt(true)
+    else sessionStorage.setItem('userName', currentUser.name)
+  },[currentUser.name])
+
+  const confirmName=()=>{
+    if(nameInput.trim().length<2){toast('Please enter a valid name.','warn');return}
+    sessionStorage.setItem('userName', nameInput.trim())
+    setUserName(nameInput.trim())
+    setShowNamePrompt(false)
+  }
 
   useEffect(()=>{
     const load = async () => {
@@ -623,24 +640,36 @@ function Dashboard() {
     setAuditLoading(true)
     try {
       const res=await authFetch('/generate-audit',{method:'POST',body:JSON.stringify({
-        accepted:history.map(h=>({id:h.id,equipment:h.equipment,type:h.type,time:h.time,message:h.message,ticket:h.ticket||null,completedAt:completedJobs[h.id]||null,accepted_by:h.accepted_by||null})),
+        accepted:history.map(h=>({id:h.id,equipment:h.equipment,type:h.type,time:h.time,message:h.message,ticket:h.ticket||null,completedAt:completedJobs[h.id]?.time||null,accepted_by:h.accepted_by||null,completed_by:completedJobs[h.id]?.by||null})),
         escalated:escalated.map(e=>({equipment_id:e.equipment_id,severity:e.severity||'Unknown',reason:e.reason,time:e.time,assigned_department:e.assigned_department||'Unknown',escalated_by:e.escalated_by||null})),
         completed:Object.keys(completedJobs).map(Number),
       })})
       const result=await res.json()
-      setAuditData(result.register);setAuditOpen(true)
+      // Merge completed_by and accepted_by data into records from history
+      const enrichedRecords = result.register.records.map(r => {
+        const matchingHistory = history.find(h => h.id === r.id || h.equipment === r.equipment_id)
+        if (matchingHistory) {
+          return {
+            ...r, 
+            accepted_by: matchingHistory.accepted_by || r.accepted_by,
+            completed_by: completedJobs[matchingHistory.id]?.by || null,
+            completed_at: completedJobs[matchingHistory.id]?.time || null
+          }
+        }
+        return r
+      })
+      setAuditData({...result.register, records: enrichedRecords});setAuditOpen(true)
       toast('Audit dashboard ready','success')
     } catch { toast('Failed to generate audit','error') }
     finally { setAuditLoading(false) }
   }
 
   const markComplete=async(logId)=>{
-    const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
-    setCompletedJobs(p=>({...p,[logId]:t}))
-    toast('✓ Work marked as complete','success')
-
-    await authFetch('/session-state/complete',{method:'POST',body:JSON.stringify({log_id:logId,completed_at:t})}).catch(()=>{})
-  }
+  const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+  setCompletedJobs(p=>({...p,[logId]:{time:t, by:currentUser.name}}))
+  toast('✓ Work marked as complete','success')
+  await authFetch('/session-state/complete',{method:'POST',body:JSON.stringify({log_id:logId,completed_at:t,completed_by:currentUser.name})}).catch(()=>{})
+}
   const copyTicket=(id)=>navigator.clipboard.writeText(id).then(()=>toast(`Copied ${id}`,'info'))
   const handleLogout=()=>instance.logoutRedirect({postLogoutRedirectUri:window.location.origin})
 
@@ -727,6 +756,7 @@ function Dashboard() {
         <div className="log-tags">
           {isComplete?<span className="log-tag tag-complete">✓ Complete</span>:<span className={`log-tag ${log.type==='healthy'?'tag-cleared':'tag-dispatched'}`}>{log.type==='healthy'?'Cleared':'Dispatched'}</span>}
           {log.accepted_by&&<span className="log-tag tag-accepted-by">by {log.accepted_by}</span>}
+          {isComplete&&<span className="log-tag tag-accepted-by">completed by {completedJobs[log.id].by}</span>}
           {log.ticket&&<span className="log-tag tag-ticket copyable" onClick={()=>copyTicket(log.ticket.ticket_id)}>{log.ticket.ticket_id} ⧉</span>}
         </div>
         {log.ticket&&log.type!=='healthy'&&!isComplete&&(
