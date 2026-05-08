@@ -81,7 +81,7 @@ def build_audit_register(
             "department":    entry.get("ticket", {}).get("assigned_to") if entry.get("ticket") else "Unknown",
             "technician_note": entry.get("note"),
             "accepted_by":   entry.get("accepted_by"),
-            "markComplete":  entry.get("completed_by") if completed_flag else None,
+            #"markComplete":  entry.get("completed_by") if completed_flag else None,
             "completed_by":  entry.get("completed_by") or "Unknown" if entry.get("id") in completed else None,
         })
 
