@@ -873,7 +873,9 @@ function Dashboard() {
 export default function App() {
   return (
     <MsalProvider instance={msalInstance}>
-      <Dashboard />
+     <AuthenticatedTemplate>
+          <Dashboard />
+     </AuthenticatedTemplate>
     </MsalProvider>
   )
 }
