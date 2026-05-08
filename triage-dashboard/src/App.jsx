@@ -847,3 +847,4 @@ export default function App() {
     </MsalProvider>
   )
 }
+
