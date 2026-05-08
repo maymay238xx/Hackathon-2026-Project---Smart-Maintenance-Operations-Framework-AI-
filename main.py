@@ -156,6 +156,7 @@ class AuditEntry(BaseModel):
     message: str
     ticket: Optional[dict] = None
     completedAt: Optional[str] = None
+    completed_by: Optional[str] = None
     note: Optional[str] = None
     accepted_by: Optional[str] = None
 
@@ -275,7 +276,8 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
     check_permission(user, "triage_decision")
     print(f"\n📝 [TRIAGE] {action.decision} → {action.equipment_id} | by {user['name']} ({user['role']})")
 
-    action.accepted_by = user["name"]
+    # action.accepted_by = user["name"]
+    action.accepted_by = action.accepted_by or user["name"]
 
     if action.severity == "Healthy":
         return {
@@ -320,7 +322,8 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             equipment_id  = action.equipment_id,
             severity      = action.severity,
             department    = action.department,
-            accepted_by   = user["name"],
+            # accepted_by   = user["name"],
+            accepted_by   = action.accepted_by,
             fault_type    = action.fault_type or "",
             fault_value   = action.fault_value,
             issue_summary = action.issue_summary or "",
@@ -335,7 +338,8 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             "type":        action.severity.lower() if action.severity else "warning",
             "message":     f"Work order dispatched to {action.department}.",
             "ticket":      ticket,
-            "accepted_by": user["name"],
+            # "accepted_by": user["name"],
+            "accepted_by": action.accepted_by,
         }
         _SESSION["history"].append(history_item)
         _SESSION["anomalies"] = [a for a in _SESSION["anomalies"] if a.get("equipment_id") != action.equipment_id]
@@ -555,8 +559,12 @@ async def mark_job_complete(payload: dict, request: Request):
     
     log_id  = str(payload.get("log_id", ""))
     done_at = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
+    completed_by = payload.get("completed_by")
     if log_id:
-        _SESSION["completed"][log_id] = done_at
+        _SESSION["completed"][log_id] = {
+            "completed_at": done_at,
+            "completed_by": completed_by,
+        }
     return {"status": "ok"}
 
 @app.post("/session-state/clear")
