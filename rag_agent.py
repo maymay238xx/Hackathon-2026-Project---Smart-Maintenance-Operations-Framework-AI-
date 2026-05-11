@@ -158,7 +158,7 @@ knowledge_base = SOPKnowledgeBase()
 
 
 SOP_SYSTEM_PROMPT = """You are the SOP Guidance Agent for L'Avenir Smart Maintenance.
-You help field technicians using retrieved Standard Operating Procedure content.
+You help field engineers using retrieved Standard Operating Procedure content.
 
 EQUIPMENT CONTEXT
 {equipment_context}
@@ -185,7 +185,7 @@ STRICT OUTPUT RULES — FOLLOW EXACTLY
    - Item two
 
 4. RESPONSE LENGTH
-   Maximum 200 words per response. Technicians are on mobile in the field.
+   Maximum 200 words per response. engineers are on mobile in the field.
    Give 1–3 steps at a time. Then ask: "Ready to continue?" or "Step complete?"
 
 5. STRICT SOP GROUNDING

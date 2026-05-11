@@ -17,7 +17,7 @@ SMOF continuously monitors real‑time equipment data, usage logs, and system si
 The platform:
 Identifies deviations before failures occur
 Triggers predictive and rule‑based maintenance workflows
-Guides technicians using validated SOP‑based instructions
+Guides engineers using validated SOP‑based instructions
 Produces audit‑ready outputs for compliance and reporting
 
 

@@ -164,7 +164,7 @@ body { background: var(--bg); color: var(--txt); font-family: var(--font-ui); -w
 .login-role-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .login-role-dot--dispatcher { background: #3b82f6; }
 .login-role-dot--manager    { background: #8b5cf6; }
-.login-role-dot--technician { background: #10b981; }
+.login-role-dot--engineer { background: #10b981; }
 .login-role-dot--auditor    { background: #f59e0b; }
 .login-role-dot--admin      { background: #ef4444; }
 .login-role-info-label { font-weight: 600; color: var(--navy); min-width: 80px; }
@@ -268,7 +268,7 @@ body { background: var(--bg); color: var(--txt); font-family: var(--font-ui); -w
 .user-pill-role  { font-size: 9px; font-weight: 600; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 5px; border-radius: 4px; }
 .user-pill-role--dispatcher { background: #dbeafe; color: #1d4ed8; }
 .user-pill-role--manager    { background: #ede9fe; color: #5b21b6; }
-.user-pill-role--technician { background: #d1fae5; color: #065f46; }
+.user-pill-role--engineer { background: #d1fae5; color: #065f46; }
 .user-pill-role--auditor    { background: #fef3c7; color: #92400e; }
 .user-pill-role--admin      { background: #fee2e2; color: #991b1b; }
 .user-pill-logout {

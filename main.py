@@ -20,7 +20,13 @@ from fabric_client import (
     write_audit_record, health_check as fabric_health_check,
 )
 from auth import get_current_user
-from roles import check_permission, require_role, ROLE_DISPATCHER, ROLE_MANAGER, ROLE_ADMIN, ROLE_TECHNICIAN, ROLE_AUDITOR, ROLE_AGENT
+# ── Updated: ROLE_TECHNICIAN → ROLE_ENGINEER ──────────────────────────────────
+from roles import (
+    check_permission, require_role,
+    ROLE_DISPATCHER, ROLE_MANAGER, ROLE_ENGINEER,
+    ROLE_AUDITOR, ROLE_ADMIN, ROLE_AGENT,
+)
+# ─────────────────────────────────────────────────────────────────────────────
 
 load_dotenv()
 
@@ -181,7 +187,6 @@ class HandoverRequest(BaseModel):
 
 @app.get("/health")
 async def health_check():
-
     try:
         import asyncio, concurrent.futures
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -197,13 +202,11 @@ async def health_check():
 
 @app.get("/me")
 async def get_me(user: dict = Depends(get_current_user)):
-    
     check_permission(user, "get_me")
     return user
 
 @app.post("/run-predictive-scan")
 async def run_scan(user: dict = Depends(get_current_user)):
-    
     check_permission(user, "run_predictive_scan")
     print(f"\n─── 🔍 SCAN by {user['name']} ({user['role']}) ───")
     try:
@@ -261,7 +264,6 @@ async def run_scan(user: dict = Depends(get_current_user)):
             })
 
         ai_result["anomalies_detected"].extend(healthy_rows)
-
         _SESSION["anomalies"] = ai_result["anomalies_detected"]
         _SESSION["last_scan"] = datetime.utcnow().isoformat()
         return {"status": "Success", "data": ai_result}
@@ -272,11 +274,8 @@ async def run_scan(user: dict = Depends(get_current_user)):
 
 @app.post("/triage-decision")
 async def process_triage(action: TriageDecision, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "triage_decision")
     print(f"\n📝 [TRIAGE] {action.decision} → {action.equipment_id} | by {user['name']} ({user['role']})")
-
-    # action.accepted_by = user["name"]
     action.accepted_by = action.accepted_by or user["name"]
 
     if action.severity == "Healthy":
@@ -291,21 +290,20 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             raise HTTPException(status_code=400, detail="An escalation reason is required.")
         import time
         escalated_item = {
-            "equipment_id":       action.equipment_id,
-            "severity":           action.severity,
-            "fault_type":         "",
-            "fault_value":        "",
+            "equipment_id":        action.equipment_id,
+            "severity":            action.severity,
+            "fault_type":          "",
+            "fault_value":         "",
             "assigned_department": action.department,
-            "building_id":        "",
-            "issue_summary":      "",
-            "reason":             action.escalate_reason,
-            "escalated_by":       user["name"],
-            "time":               datetime.utcnow().strftime("%H:%M:%S"),
-            "manager_outcome":    None,
-            "ui_id":              f"{action.equipment_id}-esc-{int(time.time())}",
+            "building_id":         "",
+            "issue_summary":       "",
+            "reason":              action.escalate_reason,
+            "escalated_by":        user["name"],
+            "time":                datetime.utcnow().strftime("%H:%M:%S"),
+            "manager_outcome":     None,
+            "ui_id":               f"{action.equipment_id}-esc-{int(time.time())}",
         }
         _SESSION["escalated"].append(escalated_item)
-
         _SESSION["anomalies"] = [a for a in _SESSION["anomalies"] if a.get("equipment_id") != action.equipment_id]
         return {
             "status":            "Escalated",
@@ -322,7 +320,6 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             equipment_id  = action.equipment_id,
             severity      = action.severity,
             department    = action.department,
-            # accepted_by   = user["name"],
             accepted_by   = action.accepted_by,
             fault_type    = action.fault_type or "",
             fault_value   = action.fault_value,
@@ -338,26 +335,23 @@ async def process_triage(action: TriageDecision, user: dict = Depends(get_curren
             "type":        action.severity.lower() if action.severity else "warning",
             "message":     f"Work order dispatched to {action.department}.",
             "ticket":      ticket,
-            # "accepted_by": user["name"],
             "accepted_by": action.accepted_by,
         }
         _SESSION["history"].append(history_item)
         _SESSION["anomalies"] = [a for a in _SESSION["anomalies"] if a.get("equipment_id") != action.equipment_id]
         return {
-            "status":      "Processed",
-            "equipment":   action.equipment_id,
-            "ticket":      ticket,
-            "log_id":      log_id,
+            "status":    "Processed",
+            "equipment": action.equipment_id,
+            "ticket":    ticket,
+            "log_id":    log_id,
         }
 
     raise HTTPException(status_code=400, detail=f"Unknown decision: {action.decision}")
 
 @app.post("/manager-decision")
 async def manager_decision(action: ManagerDecision, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "manager_decision")
     print(f"\n👔 [MANAGER] {action.decision} → {action.equipment_id} | by {user['name']} ({user['role']})")
-
     action.decided_by = user["name"]
 
     if action.decision == "Accept":
@@ -401,14 +395,12 @@ async def manager_decision(action: ManagerDecision, user: dict = Depends(get_cur
     if action.decision == "Decline":
         if not action.decline_reason:
             raise HTTPException(status_code=400, detail="A decline reason is required.")
-
         for item in _SESSION["escalated"]:
             if item.get("equipment_id") == action.equipment_id and item.get("manager_outcome") is None:
-                item["manager_outcome"]    = "declined"
-                item["decided_by"]         = user["name"]
-                item["decline_reason"]     = action.decline_reason
+                item["manager_outcome"] = "declined"
+                item["decided_by"]      = user["name"]
+                item["decline_reason"]  = action.decline_reason
                 break
-
         returned = {
             "equipment_id":        action.equipment_id,
             "severity":            action.severity or "Warning",
@@ -437,7 +429,6 @@ async def manager_decision(action: ManagerDecision, user: dict = Depends(get_cur
 
 @app.post("/sop-chat")
 async def sop_chat(request: SOPChatRequest, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "sop_chat")
     try:
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -449,7 +440,6 @@ async def sop_chat(request: SOPChatRequest, user: dict = Depends(get_current_use
 
 @app.post("/agent3-retrieve")
 async def agent3_retrieve(request: SOPChatRequest, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "agent3_retrieve")
     try:
         latest = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
@@ -460,7 +450,6 @@ async def agent3_retrieve(request: SOPChatRequest, user: dict = Depends(get_curr
 
 @app.post("/agent4-chat")
 async def agent4_chat(request: ChatbotRequest, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "agent4_chat")
     try:
         messages = [{"role": m.role, "content": m.content} for m in request.messages]
@@ -473,7 +462,6 @@ async def agent4_chat(request: ChatbotRequest, user: dict = Depends(get_current_
 
 @app.post("/generate-audit")
 async def generate_audit(request: AuditRequest, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "generate_audit")
     print(f"\n📋 [AGENT 5 — AUDIT] requested by {user['name']} ({user['role']})")
     try:
@@ -491,7 +479,6 @@ async def generate_audit(request: AuditRequest, user: dict = Depends(get_current
 
 @app.post("/generate-handover")
 async def generate_handover(request: HandoverRequest, user: dict = Depends(get_current_user)):
-    
     check_permission(user, "generate_handover")
     print(f"\n📋 [HANDOVER] by {user['name']} ({user['role']})")
     try:
@@ -507,23 +494,23 @@ async def generate_handover(request: HandoverRequest, user: dict = Depends(get_c
                 "remaining_in_kanban": len(request.remaining),
             },
             "resolved_items": [
-                {"equipment": a.equipment,
-                 "ticket": a.ticket.get("ticket_id") if a.ticket else None,
+                {"equipment":    a.equipment,
+                 "ticket":       a.ticket.get("ticket_id") if a.ticket else None,
                  "completed_at": a.completedAt,
-                 "technician_note": a.note,
-                 "accepted_by": a.accepted_by}
+                 "engineer_note": a.note,          # ← renamed from technician_note
+                 "accepted_by":  a.accepted_by}
                 for a in resolved
             ],
             "active_work_orders": [
-                {"equipment": a.equipment,
-                 "ticket": a.ticket.get("ticket_id") if a.ticket else None,
-                 "type": a.type, "dispatched": a.time,
+                {"equipment":  a.equipment,
+                 "ticket":     a.ticket.get("ticket_id") if a.ticket else None,
+                 "type":       a.type, "dispatched": a.time,
                  "accepted_by": a.accepted_by}
                 for a in in_progress
             ],
             "escalations": [
-                {"equipment": e.equipment_id, "severity": e.severity,
-                 "reason": e.reason, "escalated_by": e.escalated_by}
+                {"equipment":    e.equipment_id, "severity": e.severity,
+                 "reason":       e.reason, "escalated_by": e.escalated_by}
                 for e in request.escalated
             ],
             "remaining_anomalies": request.remaining,
@@ -545,20 +532,18 @@ async def generate_handover(request: HandoverRequest, user: dict = Depends(get_c
 
 @app.get("/session-state")
 async def get_session_state(request: Request):
-    
     return {
-        "anomalies":  _SESSION["anomalies"],
-        "history":    _SESSION["history"],
-        "escalated":  _SESSION["escalated"],
-        "completed":  _SESSION["completed"],
-        "last_scan":  _SESSION["last_scan"],
+        "anomalies": _SESSION["anomalies"],
+        "history":   _SESSION["history"],
+        "escalated": _SESSION["escalated"],
+        "completed": _SESSION["completed"],
+        "last_scan": _SESSION["last_scan"],
     }
 
 @app.post("/session-state/complete")
 async def mark_job_complete(payload: dict, request: Request):
-    
-    log_id  = str(payload.get("log_id", ""))
-    done_at = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
+    log_id       = str(payload.get("log_id", ""))
+    done_at      = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
     completed_by = payload.get("completed_by")
     if log_id:
         _SESSION["completed"][log_id] = {
@@ -569,14 +554,13 @@ async def mark_job_complete(payload: dict, request: Request):
 
 @app.post("/session-state/clear")
 async def clear_session(user: dict = Depends(get_current_user)):
-    
-    if user.get("role") not in ("admin", "manager"):
+    if user.get("role") not in (ROLE_ADMIN, ROLE_MANAGER):
         raise HTTPException(status_code=403, detail="Admin or Manager role required")
-    _SESSION["anomalies"]  = []
-    _SESSION["history"]    = []
-    _SESSION["escalated"]  = []
-    _SESSION["completed"]  = {}
-    _SESSION["last_scan"]  = None
+    _SESSION["anomalies"] = []
+    _SESSION["history"]   = []
+    _SESSION["escalated"] = []
+    _SESSION["completed"] = {}
+    _SESSION["last_scan"] = None
     print(f"🔄 [SESSION] Cleared by {user['name']}")
     return {"status": "cleared"}
 
@@ -592,7 +576,6 @@ if os.path.exists(STATIC_DIR):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-
         if full_path.startswith(API_PREFIXES):
             raise HTTPException(status_code=404, detail="API endpoint not found")
         index = os.path.join(STATIC_DIR, "index.html")
