@@ -11,8 +11,6 @@ const sev = (s) => (s ?? '').toLowerCase()
 
 const ROLES = { DISPATCHER:'dispatcher', ENGINEER:'engineer', MANAGER:'manager', AUDITOR:'auditor', ADMIN:'admin' }
 const can = (role, ...allowed) => allowed.includes(role)
-
-// Normalize any ID to a consistent string key — solves all int/string mismatch bugs
 const jobKey = (id) => String(id)
 
 let _tid = 0
@@ -203,7 +201,7 @@ function ManagerDashboard({ escalated, onClose, onAccept, onDecline }) {
   const actioned = escalated.filter(e=> e.manager_outcome)
 
   const renderCard = (item, idx) => {
-    const isOpen = declineOpen[idx]
+    const isOpen = declineOpen[item.equipment_id]
     return (
       <div key={idx} className={`mgr-card mgr-card--${sev(item.severity)}`}>
         <div className="mgr-card-head">
@@ -227,7 +225,7 @@ function ManagerDashboard({ escalated, onClose, onAccept, onDecline }) {
           </div>
         ) : (
           <div className="btn-row">
-            <button className="k-btn k-accept" onClick={()=>onAccept(item)}>Accept &amp; Create Ticket</button>
+            <button className="k-btn k-accept" onClick={()=>onAccept(item)}>Create Work Ticket</button>
             <button className="k-btn k-decline" onClick={()=>setDeclineOpen(p=>({...p,[item.equipment_id]:true}))}>Decline</button>
           </div>
         )}
@@ -301,7 +299,7 @@ function AuditDashboard({ data, onClose, isAuditor=false, currentUser, onLogout 
     return r
   },[records,search,sortCol,sortDir])
   const exportCSV=()=>{
-    const h=['Equipment','Ticket','Severity','Type','Department','Time','Status','Accepted By','Completed By','Completed At']
+    const h=['Equipment','Ticket','Severity','Type','Department','Time','Status','Ticket Created By','Completed By','Completed At']
     const rows=records.map(r=>[r.equipment_id,r.ticket_id||'',r.severity,r.record_type,r.department,r.dispatched_at,r.status,r.accepted_by||'',r.completed_by||'',r.completed_at||''])
     const csv=[h,...rows].map(r=>r.map(c=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n')
     const url=URL.createObjectURL(new Blob([csv],{type:'text/csv'}))
@@ -362,7 +360,7 @@ function AuditDashboard({ data, onClose, isAuditor=false, currentUser, onLogout 
             </div>
             <div className="ent-table-wrap">
               <table className="ent-table">
-                <thead><tr>{[['equipment_id','Equipment'],['ticket_id','Ticket'],['severity','Severity'],['department','Department'],['accepted_by','Accepted By'],['completed_by','Completed By'],['status','Status']].map(([k,l])=>(
+                <thead><tr>{[['equipment_id','Equipment'],['ticket_id','Ticket'],['severity','Severity'],['department','Department'],['accepted_by','Ticket Created By'],['completed_by','Completed By'],['status','Status']].map(([k,l])=>(
                   <th key={k} className="ent-th-sortable" onClick={()=>{if(sortCol===k)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(k);setSortDir('asc')}}}>{l}</th>
                 ))}</tr></thead>
                 <tbody>
@@ -525,90 +523,164 @@ function SOPChatPanel({ open, onClose, initialContext, getToken }) {
   )
 }
 
-function EngineersWorkbench({ onClose, currentUser, openSOP, toast, history=[], completedJobs={}, markComplete, onLogout, hideBack=false }) {
-  const [filter, setFilter] = useState('pending')
+// ── Engineer Workbench — fully self-contained ─────────────────────────────────
+function EngineersWorkbench({ onClose, currentUser, openSOP, toast, history=[], completedJobs={}, markComplete, onLogout, hideBack=false, authFetch, initialAccepted={} }) {
+  const [filter,       setFilter]       = useState('pending')
+  const [acceptedJobs, setAcceptedJobs] = useState(initialAccepted)
+  const [evidence,     setEvidence]     = useState({})
+  const [showEvidence, setShowEvidence] = useState({})
 
-  // Deduplicate history by id, then build job objects
-  const jobs = useMemo(()=>{
+  const handleAccept = (jobId) => {
+    const t   = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'})
+    const key = jobKey(jobId)
+    setAcceptedJobs(prev => ({ ...prev, [key]: { time: t, by: currentUser.name, role: currentUser.role } }))
+    toast('✓ Work ticket accepted — you are now responsible for this job', 'success')
+    if(authFetch) authFetch('/session-state/engineer-accept', {
+      method: 'POST',
+      body: JSON.stringify({ log_id: jobId, accepted_at: t, accepted_by: currentUser.name, role: currentUser.role })
+    }).catch(() => {})
+  }
+
+  const handleFileChange = (jobId, e) => {
+    const file = e.target.files[0]
+    if(!file) return
+    setEvidence(p => ({...p, [jobKey(jobId)]: file.name}))
+    toast(`📎 Evidence attached: ${file.name}`, 'info')
+  }
+
+  const handleComplete = (jobId) => {
+    markComplete(jobId, evidence[jobKey(jobId)] || null)
+  }
+
+  const jobs = useMemo(() => {
     const seen = new Set()
     return history
       .filter(h => {
-        if(h.type==='healthy') return false
+        if(h.type === 'healthy') return false
         if(seen.has(jobKey(h.id))) return false
         seen.add(jobKey(h.id))
         return true
       })
-      .map(h=>({
-        id:           h.id,
-        equipment_id: h.equipment,
-        severity:     h.type==='critical'?'Critical':'Warning',
-        severityKey:  h.type,
-        ticket_id:    h.ticket?.ticket_id||null,
-        issue_summary:h.message,
-        accepted_by:  h.accepted_by,
-        time:         h.time,
-        isComplete:   !!completedJobs[jobKey(h.id)],
-        completed_at: completedJobs[jobKey(h.id)]?.time||null,
-        completed_by: completedJobs[jobKey(h.id)]?.by||null,
-        completed_role:completedJobs[jobKey(h.id)]?.byRole||null,
+      .map(h => ({
+        id:            h.id,
+        equipment_id:  h.equipment,
+        severity:      h.type === 'critical' ? 'Critical' : 'Warning',
+        severityKey:   h.type,
+        ticket_id:     h.ticket?.ticket_id || null,
+        issue_summary: h.message,
+        dispatched_by: h.accepted_by,
+        time:          h.time,
+        isComplete:    !!completedJobs[jobKey(h.id)],
+        completed_by:  completedJobs[jobKey(h.id)]?.by || null,
+        completed_role:completedJobs[jobKey(h.id)]?.byRole || null,
+        completed_ev:  completedJobs[jobKey(h.id)]?.evidence || null,
+        isAccepted:    !!acceptedJobs[jobKey(h.id)],
+        acceptedBy:    acceptedJobs[jobKey(h.id)]?.by || null,
       }))
-      .sort((a,b)=>{
-        const ord={critical:0,warning:1}
-        const d=(ord[a.severityKey]??2)-(ord[b.severityKey]??2)
-        return d!==0?d:(a.isComplete?1:0)-(b.isComplete?1:0)
+      .sort((a, b) => {
+        const ord = { critical: 0, warning: 1 }
+        const d = (ord[a.severityKey] ?? 2) - (ord[b.severityKey] ?? 2)
+        return d !== 0 ? d : (a.isComplete ? 1 : 0) - (b.isComplete ? 1 : 0)
       })
-  },[history,completedJobs])
+  }, [history, completedJobs, acceptedJobs])
 
-  const filtered = useMemo(()=>{
-    if(filter==='pending')  return jobs.filter(j=>!j.isComplete)
-    if(filter==='complete') return jobs.filter(j=> j.isComplete)
-    if(filter==='critical') return jobs.filter(j=>j.severityKey==='critical'&&!j.isComplete)
-    if(filter==='warning')  return jobs.filter(j=>j.severityKey==='warning'&&!j.isComplete)
-    return jobs.filter(j=>!j.isComplete)
-  },[jobs,filter])
+  const filtered = useMemo(() => {
+    if(filter === 'pending')  return jobs.filter(j => !j.isComplete)
+    if(filter === 'complete') return jobs.filter(j =>  j.isComplete)
+    if(filter === 'critical') return jobs.filter(j => j.severityKey === 'critical' && !j.isComplete)
+    if(filter === 'warning')  return jobs.filter(j => j.severityKey === 'warning'  && !j.isComplete)
+    return jobs.filter(j => !j.isComplete)
+  }, [jobs, filter])
 
-  const pendingCount  = jobs.filter(j=>!j.isComplete).length
-  const completeCount = jobs.filter(j=> j.isComplete).length
+  const pendingCount  = jobs.filter(j => !j.isComplete).length
+  const completeCount = jobs.filter(j =>  j.isComplete).length
 
-  const renderJob=(job)=>(
-    <div key={jobKey(job.id)} className={`log-item log-${job.severityKey}${job.isComplete?' log-complete':''}`}>
-      <div className="log-top">
-        <span className="log-equip">{job.equipment_id}</span>
-        <span className="log-time">{job.time}</span>
-      </div>
-      <p className="log-msg">{job.issue_summary}</p>
-      <div className="log-tags">
-        <span className={`sev-badge sev-${job.severityKey}`}>{job.severity}</span>
-        {job.isComplete
-          ?<span className="log-tag tag-complete">✓ Complete</span>
-          :<span className="log-tag tag-dispatched">Pending</span>}
-        {job.accepted_by&&<span className="log-tag tag-accepted-by">accepted by {job.accepted_by}</span>}
-        {job.isComplete&&job.completed_by&&(
-          <span className="log-tag tag-accepted-by">
-            completed by {job.completed_by}{job.completed_role?` · ${job.completed_role}`:''}
-          </span>
-        )}
-        {job.ticket_id&&<span className="log-tag tag-ticket mono">{job.ticket_id}</span>}
-      </div>
-      {!job.isComplete&&(
-        <div className="log-actions">
-          <button className="btn-open-guidance"
-            onClick={()=>openSOP({equipment_id:job.equipment_id,fault_context:`${job.severity} · ${job.ticket_id||'No ticket'}`})}>
-            Open SOP Guidance
-          </button>
-          <button className="btn-mark-complete" onClick={()=>markComplete(job.id)}>
-            Mark Complete
-          </button>
+  const renderJob = (job) => {
+    const evidenceFile = evidence[jobKey(job.id)]
+    const showEv       = showEvidence[jobKey(job.id)]
+    const statusColor  = job.isComplete ? '#10b981' : job.isAccepted ? '#2563eb' : '#f59e0b'
+    const statusLabel  = job.isComplete ? '✓ Complete' : job.isAccepted ? 'In Progress' : 'New'
+    return (
+      <div key={jobKey(job.id)} className={`k-card k-card--${job.severityKey}${job.isComplete?' log-complete':''}`}
+        style={{marginBottom:'12px'}}>
+        {/* Header */}
+        <div className="k-card-head">
+          <div>
+            <div className="k-card-id">{job.equipment_id}</div>
+            {job.ticket_id && <div className="k-card-bld mono" style={{fontSize:'11px',color:'#64748b'}}>{job.ticket_id}</div>}
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+            <span style={{fontSize:'11px',fontWeight:'600',padding:'2px 8px',borderRadius:'999px',background:job.isComplete?'#d1fae5':job.isAccepted?'#dbeafe':'#fef3c7',color:statusColor,border:`1px solid ${statusColor}22`}}>
+              {statusLabel}
+            </span>
+            <span className={`sev-badge sev-${job.severityKey}`}>{job.severity}</span>
+          </div>
         </div>
-      )}
-    </div>
-  )
+
+        {/* Summary */}
+        <p className="k-summary" style={{margin:'8px 0'}}>{job.issue_summary}</p>
+
+        {/* Meta */}
+        <div className="k-metrics" style={{marginBottom:'10px'}}>
+          {job.dispatched_by && (
+            <div className="k-metric"><span className="k-lbl">Ticket created by</span><span className="k-val" style={{fontWeight:'600'}}>{job.dispatched_by}</span></div>
+          )}
+          {job.isAccepted && !job.isComplete && (
+            <div className="k-metric"><span className="k-lbl">Accepted by</span><span className="k-val" style={{fontWeight:'600',color:'#2563eb'}}>{job.acceptedBy} · {currentUser.role}</span></div>
+          )}
+          {job.isComplete && job.completed_by && (
+            <div className="k-metric"><span className="k-lbl">Completed by</span><span className="k-val" style={{fontWeight:'600',color:'#10b981'}}>{job.completed_by}{job.completed_role?` · ${job.completed_role}`:''}</span></div>
+          )}
+          {job.isComplete && job.completed_ev && (
+            <div className="k-metric"><span className="k-lbl">Evidence</span><span className="k-val">📎 {job.completed_ev}</span></div>
+          )}
+        </div>
+
+        {/* Stage 1: Accept */}
+        {!job.isAccepted && !job.isComplete && (
+          <div className="k-actions">
+            <button className="k-btn k-accept" onClick={() => handleAccept(job.id)}>
+              Accept Work Ticket
+            </button>
+          </div>
+        )}
+
+        {/* Stage 2: In progress */}
+        {job.isAccepted && !job.isComplete && (
+          <div className="k-actions" style={{flexDirection:'column',alignItems:'stretch',gap:'8px'}}>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button className="btn-open-guidance" style={{flex:1}}
+                onClick={() => openSOP({equipment_id: job.equipment_id, fault_context: `${job.severity} · ${job.ticket_id || 'No ticket'}`})}>
+                Open SOP Guidance
+              </button>
+              <button className="btn-open-guidance" style={{flex:1,background:'#f0fdf4',color:'#15803d',borderColor:'#86efac'}}
+                onClick={() => setShowEvidence(p => ({...p, [jobKey(job.id)]: !showEv}))}>
+                📎 {evidenceFile ? `✓ Attached` : 'Upload Evidence'}
+              </button>
+            </div>
+            {showEv && (
+              <label style={{display:'flex',alignItems:'center',gap:'8px',padding:'10px',background:'#f8fafc',borderRadius:'8px',border:'1px dashed #cbd5e1',cursor:'pointer',fontSize:'13px',color:'#64748b'}}>
+                {evidenceFile
+                  ? <span style={{color:'#15803d',fontWeight:600}}>✓ {evidenceFile} — click to change</span>
+                  : <><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 12V4a1 1 0 011-1h5l3 3v6a1 1 0 01-1 1H4a1 1 0 01-1-1z" stroke="#94a3b8" strokeWidth="1.3"/><path d="M9 3v3h3" stroke="#94a3b8" strokeWidth="1.3"/></svg>Choose photo or PDF as evidence</>}
+                <input type="file" accept="image/*,.pdf" style={{display:'none'}} onChange={e => handleFileChange(job.id, e)}/>
+              </label>
+            )}
+            <button className="k-btn k-accept" style={{background:'#10b981',borderColor:'#059669'}}
+              onClick={() => handleComplete(job.id)}>
+              ✓ Mark Complete{evidenceFile ? ' & Submit Evidence' : ''}
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="mgr-shell">
       <RoleTopbar user={currentUser} onLogout={onLogout}/>
       <header className="ent-header">
-        {!hideBack&&onClose&&(
+        {!hideBack && onClose && (
           <button className="ent-back-btn" onClick={onClose}>
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
             Operations
@@ -622,11 +694,11 @@ function EngineersWorkbench({ onClose, currentUser, openSOP, toast, history=[], 
             <span>{pendingCount} pending · {completeCount} complete</span>
           </div>
         </div>
-        {pendingCount>0
-          ?<span className="mgr-pending-badge">{pendingCount} job{pendingCount!==1?'s':''} to action</span>
-          :jobs.length>0
-            ?<span className="mgr-pending-badge" style={{background:'#10b981',borderColor:'#d1fae5'}}>All jobs complete ✓</span>
-            :null}
+        {pendingCount > 0
+          ? <span className="mgr-pending-badge">{pendingCount} job{pendingCount !== 1 ? 's' : ''} to action</span>
+          : jobs.length > 0
+            ? <span className="mgr-pending-badge" style={{background:'#10b981', borderColor:'#d1fae5'}}>All jobs complete ✓</span>
+            : null}
       </header>
       <div className="mgr-body">
         <div className="ent-tab-strip" style={{marginBottom:'16px'}}>
@@ -635,38 +707,131 @@ function EngineersWorkbench({ onClose, currentUser, openSOP, toast, history=[], 
             {id:'critical', label:'Critical'},
             {id:'warning',  label:'Warning'},
             {id:'complete', label:`Complete (${completeCount})`},
-          ].map(f=>(
-            <button key={f.id} className={`ent-tab${filter===f.id?' ent-tab--active':''}`} onClick={()=>setFilter(f.id)}>
+          ].map(f => (
+            <button key={f.id} className={`ent-tab${filter === f.id ? ' ent-tab--active' : ''}`} onClick={() => setFilter(f.id)}>
               {f.label}
             </button>
           ))}
           <div className="ent-tab-fill"/>
         </div>
-        {jobs.length===0
-          ?<div className="k-empty-state"><span>No accepted work tickets yet. Tickets appear once a dispatcher accepts an anomaly.</span></div>
-          :filtered.length===0
-            ?<div className="k-empty-state"><span>{filter==='complete'?'No completed jobs yet.':'No pending jobs — all work is complete ✓'}</span></div>
-            :<div className="mgr-section"><div className="panel-body" style={{display:'flex',flexDirection:'column',gap:'8px'}}>{filtered.map(renderJob)}</div></div>
+        {jobs.length === 0
+          ? <div className="k-empty-state"><span>No work tickets yet. Tickets appear once a dispatcher creates one.</span></div>
+          : filtered.length === 0
+            ? <div className="k-empty-state"><span>{filter === 'complete' ? 'No completed jobs yet.' : 'No pending jobs — all work is complete ✓'}</span></div>
+            : <div className="mgr-section"><div className="panel-body" style={{display:'flex', flexDirection:'column', gap:'8px'}}>{filtered.map(renderJob)}</div></div>
         }
       </div>
     </div>
   )
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Shift Handover Report ─────────────────────────────────────────────────────
+function HandoverDashboard({ data, stats, onClose, currentUser }) {
+  const [copied, setCopied] = useState(false)
+  const lines = (data||'').split('\n').filter(Boolean)
+
+  const copyReport = () => {
+    navigator.clipboard.writeText(data||'').then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2000) })
+  }
+
+  const sectionIcon = (line) => {
+    if(line.includes('SUMMARY'))      return '📊'
+    if(line.includes('RESOLVED'))     return '✅'
+    if(line.includes('ACTIVE'))       return '🔧'
+    if(line.includes('ESCALATION'))   return '⚠️'
+    if(line.includes('WATCH'))        return '👁️'
+    return null
+  }
+
+  const isHeader = (line) => /^(SHIFT|RESOLVED|ACTIVE|ESCALATION|WATCH)/i.test(line.trim())
+
+  return (
+    <div className="ent-shell">
+      <header className="ent-header">
+        <button className="ent-back-btn" onClick={onClose}>
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          Operations
+        </button>
+        <div className="ent-header-center">
+          <div className="ent-header-title">Shift Handover Report</div>
+          <div className="ent-header-meta">
+            <span className="ent-meta-pill">{currentUser.name}</span>
+            <span className="ent-meta-sep">·</span>
+            <span>{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</span>
+          </div>
+        </div>
+        <div className="ent-header-actions">
+          <button className="ent-action-btn ent-action-btn--primary" onClick={copyReport}>
+            {copied ? '✓ Copied' : 'Copy Report'}
+          </button>
+        </div>
+      </header>
+
+      {/* KPI strip */}
+      <div style={{display:'flex',gap:'0',borderBottom:'1px solid #e2e8f0',background:'#fff'}}>
+        {[
+          {label:'Work Orders',    val:stats.total,     color:'#0f172a'},
+          {label:'Resolved',       val:stats.resolved,  color:'#10b981'},
+          {label:'In Progress',    val:stats.inProgress,color:'#3b82f6'},
+          {label:'Escalated',      val:stats.escalated, color:'#f59e0b'},
+          {label:'Still in Kanban',val:stats.remaining, color:'#64748b'},
+        ].map((k,i)=>(
+          <div key={i} style={{flex:1,padding:'16px 20px',borderRight:'1px solid #e2e8f0',textAlign:'center'}}>
+            <div style={{fontSize:'24px',fontWeight:'800',color:k.color,fontFamily:'monospace'}}>{k.val}</div>
+            <div style={{fontSize:'11px',color:'#94a3b8',fontWeight:'500',marginTop:'2px'}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* AI narrative */}
+      <div className="ent-body" style={{padding:'24px'}}>
+        <div className="ent-chart-card ent-chart-card--full" style={{maxWidth:'860px',margin:'0 auto'}}>
+          <div className="ent-chart-header">
+            <div className="ent-chart-title">
+              <span className="ent-ai-badge">AI</span>
+              Handover Narrative
+            </div>
+          </div>
+          <div style={{padding:'4px 0'}}>
+            {lines.map((line, i) => {
+              const icon = sectionIcon(line)
+              const header = isHeader(line)
+              if(header) return (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',margin:'20px 0 8px',paddingBottom:'6px',borderBottom:'1px solid #e2e8f0'}}>
+                  {icon && <span style={{fontSize:'16px'}}>{icon}</span>}
+                  <span style={{fontSize:'13px',fontWeight:'700',color:'#0f172a',textTransform:'uppercase',letterSpacing:'0.05em'}}>{line.replace(/[*#]/g,'').trim()}</span>
+                </div>
+              )
+              if(line.startsWith('-')||line.startsWith('•')) return (
+                <div key={i} style={{display:'flex',gap:'8px',padding:'4px 0 4px 8px',fontSize:'13px',color:'#334155',lineHeight:'1.6'}}>
+                  <span style={{color:'#94a3b8',flexShrink:0}}>·</span>
+                  <span>{line.replace(/^[-•]\s*/,'')}</span>
+                </div>
+              )
+              if(line.trim()) return (
+                <p key={i} style={{fontSize:'13px',color:'#475569',lineHeight:'1.7',margin:'4px 0',paddingLeft:'8px'}}>{line}</p>
+              )
+              return <div key={i} style={{height:'6px'}}/>
+            })}
+          </div>
+        </div>
+
+        <div style={{textAlign:'center',marginTop:'24px',color:'#94a3b8',fontSize:'12px'}}>
+          Generated by L'Avenir AI · {new Date().toLocaleTimeString()} · Shift handover for {currentUser.name}
+        </div>
+      </div>
+    </div>
+  )
+}
 function Dashboard() {
   const { instance, accounts } = useMsal()
   const msalUser = accounts[0]
 
-  // ── Resolve true role from token ───────────────────────────────────────────
   const [tokenClaims, setTokenClaims] = useState(null)
   useEffect(()=>{
     if(!msalUser) return
     instance.acquireTokenSilent({...apiRequest, account:msalUser})
-      .then(res=>{
-        const claims=res.idTokenClaims||res.account?.idTokenClaims||{}
-        setTokenClaims(claims)
-      })
+      .then(res=>setTokenClaims(res.idTokenClaims||res.account?.idTokenClaims||{}))
       .catch(()=>setTokenClaims(msalUser?.idTokenClaims||{}))
   },[]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -692,43 +857,43 @@ function Dashboard() {
   const role = currentUser.role
   const handleLogout = useCallback(()=>instance.logoutRedirect({postLogoutRedirectUri:window.location.origin}),[instance])
 
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [anomalies,      setAnomalies]      = useState([])
-  const [history,        setHistory]        = useState([])
-  const [escalated,      setEscalated]      = useState([])
-  const [isScanning,     setIsScanning]     = useState(false)
-  const [scanProgress,   setScanProgress]   = useState(0)
-  const [online,         setOnline]         = useState(false)
-  const [hasScanned,     setHasScanned]     = useState(false)
-  const [lastScan,       setLastScan]       = useState(null)
-  const [escalateOpen,   setEscalateOpen]   = useState({})
-  const [escalateReason, setEscalateReason] = useState({})
-  const [completedJobs,  setCompletedJobs]  = useState({})
-  const [auditOpen,      setAuditOpen]      = useState(false)
-  const [auditData,      setAuditData]      = useState(null)
-  const [auditLoading,   setAuditLoading]   = useState(false)
-  const [managerOpen,    setManagerOpen]    = useState(false)
-  const [engineersOpen,  setEngineersOpen]  = useState(false)
-  const [sopOpen,        setSopOpen]        = useState(false)
-  const [sopContext,     setSopContext]      = useState(null)
+  const [anomalies,        setAnomalies]        = useState([])
+  const [history,          setHistory]          = useState([])
+  const [escalated,        setEscalated]        = useState([])
+  const [isScanning,       setIsScanning]       = useState(false)
+  const [scanProgress,     setScanProgress]     = useState(0)
+  const [online,           setOnline]           = useState(false)
+  const [hasScanned,       setHasScanned]       = useState(false)
+  const [lastScan,         setLastScan]         = useState(null)
+  const [escalateOpen,     setEscalateOpen]     = useState({})
+  const [escalateReason,   setEscalateReason]   = useState({})
+  const [completedJobs,    setCompletedJobs]    = useState({})
+  const [auditOpen,        setAuditOpen]        = useState(false)
+  const [auditData,        setAuditData]        = useState(null)
+  const [auditLoading,     setAuditLoading]     = useState(false)
+  const [managerOpen,      setManagerOpen]      = useState(false)
+  const [engineersOpen,    setEngineersOpen]    = useState(false)
+  const [handoverOpen,    setHandoverOpen]    = useState(false)
+  const [handoverData,    setHandoverData]    = useState(null)
+  const [handoverLoading, setHandoverLoading] = useState(false)
+  const [sopOpen,          setSopOpen]          = useState(false)
+  const [sopContext,       setSopContext]        = useState(null)
+  const [engineerAccepted, setEngineerAccepted] = useState({})
   const { toasts, add: toast } = useToasts()
 
-  const openSOP=(ctx=null)=>{setSopContext(ctx);setSopOpen(true)}
+  const openSOP = (ctx=null) => { setSopContext(ctx); setSopOpen(true) }
 
-  // ── Consistent completed job lookup — always uses string keys ─────────────
-  const isComplete = useCallback((id)=>!!completedJobs[jobKey(id)],[completedJobs])
+  const isComplete    = useCallback((id)=>!!completedJobs[jobKey(id)],[completedJobs])
   const getCompletion = useCallback((id)=>completedJobs[jobKey(id)]||null,[completedJobs])
 
-  // ── Derived ────────────────────────────────────────────────────────────────
   const pendingManagerCount = escalated.filter(e=>!e.manager_outcome).length
-  const pendingWorkCount    = history.filter(h=>h.type!=='healthy'&&!isComplete(h.id)).length
+  const pendingWorkCount    = history.filter(h=>h.type!=='healthy'&&!isComplete(h.id)&&!engineerAccepted[jobKey(h.id)]).length
   const criticals = anomalies.filter(a=>sev(a.severity)==='critical')
   const warnings  = anomalies.filter(a=>sev(a.severity)==='warning')
   const healthy   = anomalies.filter(a=>sev(a.severity)==='healthy')
   const stats = useMemo(()=>({total:anomalies.length,critical:criticals.length,warning:warnings.length,healthy:healthy.length}),[anomalies])
   const pendingEscalations = escalated.filter(e=>!e.manager_outcome)
 
-  // ── Session restore ────────────────────────────────────────────────────────
   useEffect(()=>{
     const load=async()=>{
       try {
@@ -741,19 +906,29 @@ function Dashboard() {
           setAnomalies(data.anomalies.map((a,i)=>({...a,ui_id:a.ui_id||`${a.equipment_id}-${i}`})))
           setHasScanned(true); setOnline(true)
         }
-        if(data.history?.length) setHistory(data.history)
+        if(data.history?.length)   setHistory(data.history)
         if(data.escalated?.length) setEscalated(data.escalated)
         if(data.completed){
-          // Normalize all keys to strings to prevent int/string mismatch
           const norm={}
-          Object.entries(data.completed).forEach(([k,v])=>{norm[jobKey(k)]=v})
+          Object.entries(data.completed).forEach(([k,v])=>{
+            norm[jobKey(k)] = {
+              time:     v.time     || v.completed_at || '',
+              by:       v.by       || v.completed_by || '',
+              byRole:   v.byRole   || v.completed_by_role || '',
+              evidence: v.evidence || null,
+            }
+          })
           setCompletedJobs(norm)
+        }
+        if(data.engineer_accepted){
+          const norm={}
+          Object.entries(data.engineer_accepted).forEach(([k,v])=>{norm[jobKey(k)]=v})
+          setEngineerAccepted(norm)
         }
         if(data.last_scan) setLastScan(new Date(data.last_scan))
         if(data.anomalies?.length||data.history?.length)
           toast(`Session restored — ${data.anomalies?.length||0} alerts, ${data.history?.length||0} work orders`,'info')
-        // Auto-generate audit for auditor role
-        if((data.history?.length||data.escalated?.length)){
+        if(data.history?.length||data.escalated?.length){
           const norm={}
           Object.entries(data.completed||{}).forEach(([k,v])=>{norm[jobKey(k)]=v})
           if(role===ROLES.AUDITOR) generateAuditFromData(data.history||[],data.escalated||[],norm)
@@ -764,50 +939,30 @@ function Dashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[])
 
-  // ── Audit generation ───────────────────────────────────────────────────────
   const generateAuditFromData=async(hist,esc,comp)=>{
     if(!hist.length&&!esc.length){ toast('No session activity to audit yet.','warn'); return }
     setAuditLoading(true)
     try {
-      // Drop escalations for equipment that already has an accepted work order
       const acceptedEquipment=new Set(hist.map(h=>h.equipment))
       const dedupedEsc=esc.filter(e=>!acceptedEquipment.has(e.equipment_id))
-
       const res=await authFetch('/generate-audit',{method:'POST',body:JSON.stringify({
         accepted:hist.map(h=>({
-          id:          h.id,
-          equipment:   h.equipment,
-          type:        h.type,
-          time:        h.time,
-          message:     h.message,
-          ticket:      h.ticket||null,
-          completedAt: comp[jobKey(h.id)]?.time||null,
-          accepted_by: h.accepted_by||null,
-          completed_by:comp[jobKey(h.id)]?.by||null,
+          id:h.id, equipment:h.equipment, type:h.type, time:h.time, message:h.message,
+          ticket:h.ticket||null, completedAt:comp[jobKey(h.id)]?.time||null,
+          accepted_by:h.accepted_by||null, completed_by:comp[jobKey(h.id)]?.by||null,
         })),
         escalated:dedupedEsc.map(e=>({
-          equipment_id:        e.equipment_id,
-          severity:            e.severity||'Unknown',
-          reason:              e.reason,
-          time:                e.time,
-          assigned_department: e.assigned_department||'Unknown',
-          escalated_by:        e.escalated_by||null,
+          equipment_id:e.equipment_id, severity:e.severity||'Unknown',
+          reason:e.reason, time:e.time,
+          assigned_department:e.assigned_department||'Unknown', escalated_by:e.escalated_by||null,
         })),
         completed:Object.keys(comp),
       })})
       const result=await res.json()
-      // Enrich records with completed_by — use String comparison to avoid type mismatch
       const enriched=result.register.records.map(r=>{
         const m=hist.find(h=>jobKey(h.id)===jobKey(r.id)||h.equipment===r.equipment_id)
         const compEntry=m?comp[jobKey(m.id)]:null
-        return {
-          ...r,
-          accepted_by:   m?.accepted_by||r.accepted_by||null,
-          completed_by:  compEntry?.by||null,
-          completed_at:  compEntry?.time||null,
-          // Override status if we know it's complete locally
-          status:        compEntry?'COMPLETE':r.status,
-        }
+        return { ...r, accepted_by:m?.accepted_by||r.accepted_by||null, completed_by:compEntry?.by||null, completed_at:compEntry?.time||null, status:compEntry?'COMPLETE':r.status }
       })
       setAuditData({...result.register,records:enriched})
       setAuditOpen(true)
@@ -818,7 +973,66 @@ function Dashboard() {
 
   const generateAudit=()=>generateAuditFromData(history,escalated,completedJobs)
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  const generateHandover=async()=>{
+    if(!history.length){ toast('No shift activity to hand over yet.','warn'); return }
+    setHandoverLoading(true)
+    try {
+      const completedSet=new Set(Object.keys(completedJobs))
+      const res=await authFetch('/generate-handover',{method:'POST',body:JSON.stringify({
+        accepted: history.map(h=>({id:h.id,equipment:h.equipment,type:h.type,time:h.time,message:h.message,ticket:h.ticket||null,completedAt:completedJobs[jobKey(h.id)]?.time||null,accepted_by:h.accepted_by||null,completed_by:completedJobs[jobKey(h.id)]?.by||null})),
+        escalated:escalated.map(e=>({equipment_id:e.equipment_id,severity:e.severity||'Unknown',reason:e.reason,time:e.time,assigned_department:e.assigned_department||'Unknown',escalated_by:e.escalated_by||null})),
+        completed:Object.keys(completedJobs).map(Number).filter(Boolean),
+        remaining:anomalies.map(a=>({equipment_id:a.equipment_id,severity:a.severity})),
+      })})
+      const result=await res.json()
+      const resolved   = history.filter(h=>completedJobs[jobKey(h.id)])
+      const inProgress = history.filter(h=>!completedJobs[jobKey(h.id)]&&h.type!=='healthy')
+      setHandoverData({
+        text: result.handover,
+        stats:{
+          total:      history.filter(h=>h.type!=='healthy').length,
+          resolved:   resolved.length,
+          inProgress: inProgress.length,
+          escalated:  escalated.length,
+          remaining:  anomalies.length,
+        }
+      })
+      setHandoverOpen(true)
+      toast('Handover report ready','success')
+    } catch(e){ toast('Failed to generate handover','error') }
+    finally { setHandoverLoading(false) }
+  }
+
+  // Auto-refresh session every 30s so engineer sees new tickets without reloading
+  useEffect(()=>{
+    const iv=setInterval(async()=>{
+      try {
+        let res=await authFetch('/session-state')
+        if(res.status===401) res=await fetch(`${API_URL}/session-state`)
+        if(!res.ok) return
+        const data=await res.json()
+        if(data.history?.length) setHistory(data.history)
+        if(data.escalated?.length) setEscalated(data.escalated)
+        if(data.anomalies?.length){
+          setAnomalies(data.anomalies.map((a,i)=>({...a,ui_id:a.ui_id||`${a.equipment_id}-${i}`})))
+          setOnline(true)
+        }
+        if(data.completed){
+          const norm={}
+          Object.entries(data.completed).forEach(([k,v])=>{norm[jobKey(k)]={time:v.time||v.completed_at||'',by:v.by||v.completed_by||'',byRole:v.byRole||v.completed_by_role||'',evidence:v.evidence||null}})
+          setCompletedJobs(norm)
+        }
+        if(data.engineer_accepted){
+          const norm={}
+          Object.entries(data.engineer_accepted).forEach(([k,v])=>{norm[jobKey(k)]=v})
+          setEngineerAccepted(norm)
+        }
+      } catch {}
+    }, 30000)
+    return ()=>clearInterval(iv)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[])
+
   const runScan=async()=>{
     setIsScanning(true);setHasScanned(true);setScanProgress(0)
     const prog=setInterval(()=>setScanProgress(p=>Math.min(p+Math.random()*15,85)),400)
@@ -828,9 +1042,7 @@ function Dashboard() {
       const result=await res.json()
       clearInterval(prog);setScanProgress(100)
       await new Promise(r=>setTimeout(r,300))
-      const data=(result.data?.anomalies_detected||[])
-        .map((a,i)=>({...a,ui_id:`${a.equipment_id}-${i}`}))
-        .sort((a,b)=>({critical:0,warning:1,healthy:2}[sev(a.severity)]??3)-({critical:0,warning:1,healthy:2}[sev(b.severity)]??3))
+      const data=(result.data?.anomalies_detected||[]).map((a,i)=>({...a,ui_id:`${a.equipment_id}-${i}`})).sort((a,b)=>({critical:0,warning:1,healthy:2}[sev(a.severity)]??3)-({critical:0,warning:1,healthy:2}[sev(b.severity)]??3))
       setAnomalies(data);setOnline(true);setLastScan(new Date())
       const crits=data.filter(a=>sev(a.severity)==='critical').length
       toast(`Scan complete — ${crits} critical fault${crits!==1?'s':''} detected`,crits>0?'error':'success')
@@ -846,11 +1058,10 @@ function Dashboard() {
     }
     try {
       const res=await authFetch('/triage-decision',{method:'POST',body:JSON.stringify({
-        equipment_id:  anomaly.equipment_id, decision, escalate_reason:reason,
-        severity:      anomaly.severity, department:anomaly.assigned_department,
-        accepted_by:   currentUser.name, fault_type:anomaly.fault_type||'',
-        fault_value:   anomaly.fault_value||null, issue_summary:anomaly.issue_summary||'',
-        building_id:   anomaly.building_id||'',
+        equipment_id:anomaly.equipment_id, decision, escalate_reason:reason,
+        severity:anomaly.severity, department:anomaly.assigned_department,
+        accepted_by:currentUser.name, fault_type:anomaly.fault_type||'',
+        fault_value:anomaly.fault_value||null, issue_summary:anomaly.issue_summary||'', building_id:anomaly.building_id||'',
       })})
       if(!res.ok){const e=await res.json();toast(e.detail||'Server error','error');return}
       const result=await res.json()
@@ -858,14 +1069,13 @@ function Dashboard() {
       const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
       if(decision==='Accept'){
         const s=sev(anomaly.severity)
-        // Use backend log_id for consistent ID matching with audit + completedJobs
         const logId=result.log_id||Date.now()
         const msgs={critical:`Emergency response dispatched to ${anomaly.assigned_department}.`,warning:`Inspection scheduled with ${anomaly.assigned_department}.`,healthy:`Baseline verified. Cleared.`}
         setHistory(prev=>{
           if(prev.some(h=>jobKey(h.id)===jobKey(logId))) return prev
           return [{id:logId,time:t,equipment:anomaly.equipment_id,type:s,message:msgs[s]??'Action taken.',ticket:result.ticket??null,accepted_by:currentUser.name},...prev]
         })
-        toast(`✓ ${anomaly.equipment_id} accepted`,'success')
+        toast(`✓ Work ticket created for ${anomaly.equipment_id}`,'success')
       } else {
         setEscalated(prev=>[{...anomaly,time:t,reason,escalated_by:currentUser.name,manager_outcome:null},...prev])
         toast(`↑ ${anomaly.equipment_id} escalated to manager`,'warn')
@@ -877,20 +1087,16 @@ function Dashboard() {
     if(decision==='Decline'&&!declineReason?.trim()){toast('Please provide a decline reason.','warn');return}
     try {
       const res=await authFetch('/manager-decision',{method:'POST',body:JSON.stringify({
-        equipment_id:  item.equipment_id, decision, decline_reason:declineReason,
-        severity:      item.severity, department:item.assigned_department,
-        decided_by:    currentUser.name, fault_type:item.fault_type||'',
-        fault_value:   item.fault_value||null, issue_summary:item.issue_summary||'',
-        building_id:   item.building_id||'',
+        equipment_id:item.equipment_id, decision, decline_reason:declineReason,
+        severity:item.severity, department:item.assigned_department,
+        decided_by:currentUser.name, fault_type:item.fault_type||'',
+        fault_value:item.fault_value||null, issue_summary:item.issue_summary||'', building_id:item.building_id||'',
       })})
       if(!res.ok){const e=await res.json();toast(e.detail||'Server error','error');return}
       const result=await res.json()
       const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
       const outcome=decision==='Accept'?'accepted':'declined'
-      setEscalated(prev=>prev.map(e=>
-        e.equipment_id===item.equipment_id&&!e.manager_outcome
-          ?{...e,manager_outcome:outcome,manager_ticket:result.ticket?.ticket_id||null,decided_by:currentUser.name,decided_at:t}:e
-      ))
+      setEscalated(prev=>prev.map(e=>e.equipment_id===item.equipment_id&&!e.manager_outcome?{...e,manager_outcome:outcome,manager_ticket:result.ticket?.ticket_id||null,decided_by:currentUser.name,decided_at:t}:e))
       if(decision==='Accept'){
         const newLogId=result.log_id||Date.now()
         setHistory(prev=>{
@@ -905,19 +1111,18 @@ function Dashboard() {
     } catch { toast('Error processing manager decision.','error') }
   }
 
-  const markComplete=async(logId)=>{
+  const markComplete=async(logId, evidence=null)=>{
     const t=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'})
-    const key=jobKey(logId)  // always string
-    setCompletedJobs(p=>({...p,[key]:{time:t,by:currentUser.name,byRole:currentUser.role}}))
+    const key=jobKey(logId)
+    setCompletedJobs(p=>({...p,[key]:{time:t,by:currentUser.name,byRole:currentUser.role,evidence}}))
     toast('✓ Work marked as complete','success')
     await authFetch('/session-state/complete',{method:'POST',body:JSON.stringify({
-      log_id:logId, completed_at:t, completed_by:currentUser.name, completed_by_role:currentUser.role,
+      log_id:logId, completed_at:t, completed_by:currentUser.name, completed_by_role:currentUser.role, evidence,
     })}).catch(()=>{})
   }
 
   const copyTicket=(id)=>navigator.clipboard.writeText(id).then(()=>toast(`Copied ${id}`,'info'))
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
   const renderCard=(anomaly)=>{
     const s=sev(anomaly.severity),isOpen=escalateOpen[anomaly.ui_id]
     const trendIcon=anomaly.trend==='up'?'↑':anomaly.trend==='down'?'↓':'→'
@@ -932,7 +1137,7 @@ function Dashboard() {
       </div>
     ):(
       <div className="btn-row">
-        <button className="k-btn k-accept" onClick={()=>processDecision(anomaly,'Accept')}>Accept</button>
+        <button className="k-btn k-accept" onClick={()=>processDecision(anomaly,'Accept')}>Create Work Ticket</button>
         <button className="k-btn k-escalate" onClick={()=>setEscalateOpen(p=>({...p,[anomaly.ui_id]:true}))}>Escalate</button>
       </div>
     )
@@ -992,11 +1197,12 @@ function Dashboard() {
         <p className="log-msg">{log.message}</p>
         <div className="log-tags">
           {done?<span className="log-tag tag-complete">✓ Complete</span>:<span className={`log-tag ${log.type==='healthy'?'tag-cleared':'tag-dispatched'}`}>{log.type==='healthy'?'Cleared':'Dispatched'}</span>}
-          {log.accepted_by&&<span className="log-tag tag-accepted-by">by {log.accepted_by}</span>}
+          {log.accepted_by&&<span className="log-tag tag-accepted-by">ticket created by {log.accepted_by}</span>}
           {done&&<span className="log-tag tag-accepted-by">completed by {done.by}{done.byRole?` · ${done.byRole}`:''}</span>}
+          {done?.evidence&&<span className="log-tag tag-ticket">📎 {done.evidence}</span>}
           {log.ticket&&<span className="log-tag tag-ticket copyable" onClick={()=>copyTicket(log.ticket.ticket_id)}>{log.ticket.ticket_id} ⧉</span>}
         </div>
-        {log.ticket&&log.type!=='healthy'&&!done&&(
+        {log.ticket&&log.type!=='healthy'&&!done&&can(role,ROLES.ENGINEER,ROLES.MANAGER,ROLES.ADMIN)&&(
           <div className="log-actions">
             <button className="btn-open-guidance" onClick={()=>openSOP({equipment_id:log.equipment,fault_context:`${log.type==='critical'?'Critical':'Warning'} · ${log.ticket.ticket_id}`})}>Open SOP Guidance</button>
             <button className="btn-mark-complete" onClick={()=>markComplete(log.id)}>Mark Complete</button>
@@ -1009,7 +1215,6 @@ function Dashboard() {
   // ── View routing ───────────────────────────────────────────────────────────
   const toastBar=<div className="toast-stack">{toasts.map(t=><div key={t.id} className={`toast toast-${t.type}`}>{t.msg}</div>)}</div>
 
-  // Gate: show loading spinner until token claims resolve
   if(!tokenClaims) return (
     <div style={{display:'flex',flexDirection:'column',justifyContent:'center',alignItems:'center',height:'100vh',gap:'12px'}}>
       <div className="login-auth-spinner"/>
@@ -1017,21 +1222,23 @@ function Dashboard() {
     </div>
   )
 
-  // Engineer: render-time routing — never sees main dashboard
   if(role===ROLES.ENGINEER) return (
     <>{toastBar}
       <SOPChatPanel open={sopOpen} onClose={()=>setSopOpen(false)} initialContext={sopContext} getToken={getToken}/>
       <EngineersWorkbench onClose={null} currentUser={currentUser} openSOP={openSOP}
         toast={toast} history={history} completedJobs={completedJobs}
-        markComplete={markComplete} onLogout={handleLogout} hideBack={true}/>
+        markComplete={markComplete} onLogout={handleLogout} hideBack={true}
+        authFetch={authFetch} initialAccepted={engineerAccepted}/>
     </>
   )
 
-  // Auditor: render-time routing — only sees audit dashboard
   if(role===ROLES.AUDITOR){
     if(!auditData) return <>{toastBar}<AuditorLanding onGenerate={generateAudit} loading={auditLoading} currentUser={currentUser} onLogout={handleLogout}/></>
     return <>{toastBar}<AuditDashboard data={auditData} onClose={()=>setAuditData(null)} isAuditor={true} currentUser={currentUser} onLogout={handleLogout}/></>
   }
+
+  if(handoverOpen&&handoverData)
+    return <>{toastBar}<HandoverDashboard data={handoverData.text} stats={handoverData.stats} onClose={()=>setHandoverOpen(false)} currentUser={currentUser}/></>
 
   if(auditOpen&&auditData)
     return <>{toastBar}<AuditDashboard data={auditData} onClose={()=>setAuditOpen(false)}/></>
@@ -1045,11 +1252,11 @@ function Dashboard() {
         <SOPChatPanel open={sopOpen} onClose={()=>setSopOpen(false)} initialContext={sopContext} getToken={getToken}/>
         <EngineersWorkbench onClose={()=>setEngineersOpen(false)} currentUser={currentUser} openSOP={openSOP}
           toast={toast} history={history} completedJobs={completedJobs}
-          markComplete={markComplete} onLogout={handleLogout}/>
+          markComplete={markComplete} onLogout={handleLogout}
+          authFetch={authFetch} initialAccepted={engineerAccepted}/>
       </>
     )
 
-  // ── Main operations view ───────────────────────────────────────────────────
   const incompleteWork=history.filter(log=>!isComplete(log.id))
 
   return (
@@ -1118,6 +1325,14 @@ function Dashboard() {
             </button>
           )}
           {can(role,ROLES.MANAGER,ROLES.ADMIN)&&(
+            <button className={`btn-audit${handoverLoading?' scanning':''}`}
+              style={{background:'#f0fdf4',borderColor:'#86efac',color:'#15803d'}}
+              onClick={generateHandover} disabled={handoverLoading}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h10a1 1 0 011 1v10a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1z" stroke="currentColor" strokeWidth="1.3"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+              {handoverLoading?'Generating…':'Shift Handover'}
+            </button>
+          )}
+          {can(role,ROLES.MANAGER,ROLES.ADMIN)&&(
             <button className={`btn-audit${auditLoading?' scanning':''}`} onClick={generateAudit} disabled={auditLoading}>
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.3"/><rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.3"/><rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.3"/><rect x="9" y="9" width="5.5" height="5.5" rx="1.2" stroke="currentColor" strokeWidth="1.3"/></svg>
               {auditLoading?'Generating…':'Audit Dashboard'}
@@ -1158,9 +1373,7 @@ function Dashboard() {
             <span className="panel-title">Pending Escalations</span>
             {pendingEscalations.length>0
               ?<span className="panel-badge badge-amber">{pendingEscalations.length} awaiting manager</span>
-              :escalated.length>0
-                ?<span className="panel-badge badge-green">All reviewed</span>
-                :null}
+              :escalated.length>0?<span className="panel-badge badge-green">All reviewed</span>:null}
           </div>
           <div className="panel-body">
             {pendingEscalations.length===0
@@ -1174,9 +1387,7 @@ function Dashboard() {
             <span className="panel-title">Active Work Orders</span>
             {incompleteWork.length>0
               ?<span className="panel-badge badge-amber">{incompleteWork.length} in progress</span>
-              :history.length>0
-                ?<span className="panel-badge badge-green">All complete ✓</span>
-                :null}
+              :history.length>0?<span className="panel-badge badge-green">All complete ✓</span>:null}
           </div>
           <div className="panel-body">
             {incompleteWork.length===0

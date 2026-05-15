@@ -1,24 +1,26 @@
-
-
 import os
 import httpx
 from functools import lru_cache
 from fastapi import Request, HTTPException, status
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
-TENANT_ID  = os.getenv("ENTRA_TENANT_ID")
-CLIENT_ID  = os.getenv("ENTRA_CLIENT_ID")
-AUDIENCE   = os.getenv("ENTRA_AUDIENCE",   f"api://{os.getenv('ENTRA_CLIENT_ID','9b1ff49f-dd34-4443-adaa-55e55c767e9b')}")
-BYPASS     = os.getenv("DEV_AUTH_BYPASS",  "true").lower() == "true"
+TENANT_ID = os.getenv("ENTRA_TENANT_ID")
+CLIENT_ID = os.getenv("ENTRA_CLIENT_ID")
+AUDIENCE  = os.getenv("ENTRA_AUDIENCE", f"api://{os.getenv('ENTRA_CLIENT_ID','9b1ff49f-dd34-4443-adaa-55e55c767e9b')}")
+BYPASS    = os.getenv("DEV_AUTH_BYPASS", "true").lower() == "true"
 
-JWKS_URL   = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
-ISSUER     = f"https://login.microsoftonline.com/{TENANT_ID}/v2.0"
+JWKS_URL  = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
+
+# Accept both v1 and v2 token issuers — Azure AD can issue either depending
+# on the app manifest's accessTokenAcceptedVersion setting
+VALID_ISSUERS = [
+    f"https://login.microsoftonline.com/{TENANT_ID}/v2.0",
+    f"https://sts.windows.net/{TENANT_ID}/",
+]
 
 
-# Dev user (used when DEV_AUTH_BYPASS=true) 
 def _dev_user() -> dict:
     return {
         "id":        os.getenv("DEV_USER_ID",    "demo-dispatcher-001"),
@@ -36,50 +38,51 @@ def _get_jwks() -> dict:
     return resp.json()
 
 
-
 def _validate_jwt(token: str) -> dict:
-    """
-    Validates an Entra ID JWT and returns the decoded claims.
-    Raises HTTP 401 on any validation failure.
-    """
     try:
-        from jose import jwt, JWTError, jwk
-        from jose.utils import base64url_decode
-        import json
+        from jose import jwt, JWTError
 
-        # Get signing keys
-        jwks = _get_jwks()
-
-        # Decode header to find key ID
+        jwks   = _get_jwks()
         header = jwt.get_unverified_header(token)
         kid    = header.get("kid")
 
-        # Find matching key
-        key = next(
-            (k for k in jwks.get("keys", []) if k.get("kid") == kid),
-            None
-        )
+        key = next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
         if not key:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="JWT signing key not found in JWKS",
             )
 
-        # Validate and decode
-        claims = jwt.decode(
-            token,
-            key,
-            algorithms=["RS256"],
-            audience=AUDIENCE,
-            issuer=ISSUER,
+        # Try each valid issuer — handles both v1 (sts.windows.net) and
+        # v2 (login.microsoftonline.com) token formats
+        last_error = None
+        for issuer in VALID_ISSUERS:
+            try:
+                claims = jwt.decode(
+                    token,
+                    key,
+                    algorithms=["RS256"],
+                    audience=AUDIENCE,
+                    issuer=issuer,
+                )
+                return claims
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token validation failed: {str(last_error)}",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        return claims
 
     except ImportError:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="python-jose not installed. Run: pip install python-jose[cryptography]",
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -89,35 +92,21 @@ def _validate_jwt(token: str) -> dict:
 
 
 def _extract_user(claims: dict) -> dict:
-    """
-    Extracts the user identity dict from validated JWT claims.
-
-    Claim mappings:
-      oid   → user ID (stable Azure AD object ID)
-      name  → display name
-      upn / preferred_username → email
-      roles → list of app roles (we take the first one)
-      azp   → authorised party (client ID) — present for agent SPs
-    """
     roles = claims.get("roles", [])
     role  = roles[0] if roles else ""
-
     return {
         "id":        claims.get("oid", ""),
         "name":      claims.get("name", claims.get("preferred_username", "Unknown")),
         "email":     claims.get("upn", claims.get("preferred_username", "")),
         "role":      role,
-        "client_id": claims.get("azp", ""),   # set for SP tokens, empty for user tokens
+        "client_id": claims.get("azp", ""),
     }
 
 
-# Main dependency 
 async def get_current_user(request: Request) -> dict:
- 
     if BYPASS:
         return _dev_user()
 
-    # Extract Bearer token
     auth_header = request.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(
@@ -126,7 +115,7 @@ async def get_current_user(request: Request) -> dict:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token  = auth_header[7:]  # strip "Bearer "
+    token  = auth_header[7:]
     claims = _validate_jwt(token)
     user   = _extract_user(claims)
 
@@ -140,7 +129,7 @@ async def get_current_user(request: Request) -> dict:
     return user
 
 
-# Convenience helpers
 def is_manager(user: dict)    -> bool: return user.get("role") in ("manager", "admin")
 def is_dispatcher(user: dict) -> bool: return user.get("role") in ("dispatcher", "manager", "admin")
+def is_engineer(user: dict)   -> bool: return user.get("role") in ("engineer", "dispatcher", "manager", "admin")
 def is_agent(user: dict)      -> bool: return user.get("role") == "agent.call"

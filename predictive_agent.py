@@ -1,4 +1,3 @@
-
 import os, json, re, httpx
 from openai import AzureOpenAI
 from dotenv import load_dotenv
@@ -6,12 +5,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 http_client = httpx.Client(verify=False)
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    http_client=http_client,
-)
+
+def get_client():
+    return AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+        http_client=http_client,
+    )
 
 SYSTEM_PROMPT = """You are the Predictive Monitoring Agent for L'Avenir Smart Maintenance.
 
@@ -71,7 +72,7 @@ Return ONLY raw JSON. No markdown. No explanation. No preamble.
 def run_predictive_analysis(sensor_data_json: str) -> dict:
     print("🤖 [AGENT 1 — CHRISTABELLE] Running predictive analysis...")
 
-    response = client.chat.completions.create(
+    response = get_client().chat.completions.create(
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
         max_tokens=4000,
         temperature=0,

@@ -40,12 +40,14 @@ app.add_middleware(
 )
 
 _http = httpx.Client(verify=False)
-_az   = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    http_client=_http,
-)
+
+def get_az_client():
+    return AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+        http_client=_http,
+    )
 
 THRESHOLDS = {
     "temperature_c":  {"base": 22.0, "warning_delta": 0.8,  "critical_abs": 24.5},
@@ -56,11 +58,12 @@ THRESHOLDS = {
 }
 
 _SESSION = {
-    "anomalies":  [],
-    "history":    [],
-    "escalated":  [],
-    "completed":  {},
-    "last_scan":  None,
+    "anomalies":          [],
+    "history":            [],
+    "escalated":          [],
+    "completed":          {},
+    "engineer_accepted":  {},
+    "last_scan":          None,
 }
 
 EQUIPMENT_DEPT_MAP = {
@@ -520,7 +523,7 @@ async def generate_handover(request: HandoverRequest, user: dict = Depends(get_c
             "SHIFT SUMMARY / RESOLVED THIS SHIFT / ACTIVE WORK ORDERS / ESCALATIONS PENDING / WATCH LIST FOR NEXT SHIFT. "
             "Under 200 words. Second person for watch list. Include who accepted each ticket where available."
         )
-        resp = _az.chat.completions.create(
+        resp = get_az_client().chat.completions.create(
             model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"), max_tokens=350,
             messages=[{"role":"system","content":prompt},
                       {"role":"user","content":json.dumps(context,indent=2)}],
@@ -533,22 +536,39 @@ async def generate_handover(request: HandoverRequest, user: dict = Depends(get_c
 @app.get("/session-state")
 async def get_session_state(request: Request):
     return {
-        "anomalies": _SESSION["anomalies"],
-        "history":   _SESSION["history"],
-        "escalated": _SESSION["escalated"],
-        "completed": _SESSION["completed"],
-        "last_scan": _SESSION["last_scan"],
+        "anomalies":         _SESSION["anomalies"],
+        "history":           _SESSION["history"],
+        "escalated":         _SESSION["escalated"],
+        "completed":         _SESSION["completed"],
+        "engineer_accepted": _SESSION["engineer_accepted"],
+        "last_scan":         _SESSION["last_scan"],
     }
+
+@app.post("/session-state/engineer-accept")
+async def engineer_accept_job(payload: dict, request: Request):
+    log_id      = str(payload.get("log_id", ""))
+    accepted_at = payload.get("accepted_at", datetime.utcnow().strftime("%H:%M:%S"))
+    accepted_by = payload.get("accepted_by")
+    role        = payload.get("role")
+    if log_id:
+        _SESSION["engineer_accepted"][log_id] = {
+            "time": accepted_at,
+            "by":   accepted_by,
+            "role": role,
+        }
+    return {"status": "ok"}
 
 @app.post("/session-state/complete")
 async def mark_job_complete(payload: dict, request: Request):
-    log_id       = str(payload.get("log_id", ""))
-    done_at      = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
-    completed_by = payload.get("completed_by")
+    log_id           = str(payload.get("log_id", ""))
+    done_at          = payload.get("completed_at", datetime.utcnow().strftime("%H:%M:%S"))
+    completed_by     = payload.get("completed_by")
+    completed_by_role= payload.get("completed_by_role")
     if log_id:
         _SESSION["completed"][log_id] = {
             "completed_at": done_at,
             "completed_by": completed_by,
+            "byRole":       completed_by_role,
         }
     return {"status": "ok"}
 
@@ -556,11 +576,12 @@ async def mark_job_complete(payload: dict, request: Request):
 async def clear_session(user: dict = Depends(get_current_user)):
     if user.get("role") not in (ROLE_ADMIN, ROLE_MANAGER):
         raise HTTPException(status_code=403, detail="Admin or Manager role required")
-    _SESSION["anomalies"] = []
-    _SESSION["history"]   = []
-    _SESSION["escalated"] = []
-    _SESSION["completed"] = {}
-    _SESSION["last_scan"] = None
+    _SESSION["anomalies"]         = []
+    _SESSION["history"]           = []
+    _SESSION["escalated"]         = []
+    _SESSION["completed"]         = {}
+    _SESSION["engineer_accepted"] = {}
+    _SESSION["last_scan"]         = None
     print(f"🔄 [SESSION] Cleared by {user['name']}")
     return {"status": "cleared"}
 
@@ -568,7 +589,7 @@ STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 API_PREFIXES = (
     "health", "me", "run-", "triage-", "manager-",
-    "sop-", "agent", "generate-", "session-",
+    "sop-", "agent", "generate-", "session-", "completed",
 )
 
 if os.path.exists(STATIC_DIR):
@@ -576,7 +597,7 @@ if os.path.exists(STATIC_DIR):
 
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        if full_path.startswith(API_PREFIXES):
+        if any(full_path.startswith(p) for p in API_PREFIXES):
             raise HTTPException(status_code=404, detail="API endpoint not found")
         index = os.path.join(STATIC_DIR, "index.html")
         if os.path.exists(index):

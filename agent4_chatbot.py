@@ -5,12 +5,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 http_client = httpx.Client(verify=False)
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
-    http_client=http_client,
-)
+
+def get_client():
+    return AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version=os.getenv("AZURE_OPENAI_API_VERSION"),
+        http_client=http_client,
+    )
 
 from rag_agent import knowledge_base
 
@@ -102,10 +104,9 @@ def run_chatbot(
         )
         ticket_ref = equipment_id
 
-    # Determine SOP source for logging
     eq_lower   = equipment_id.lower()
     sop_source = (
-        "Fluid Pump Intervention Guideline v2"   if "pump" in eq_lower else
+        "Fluid Pump Intervention Guideline v2"     if "pump" in eq_lower else
         "HVAC Predictive Maintenance Guideline v2" if "hvac" in eq_lower else
         "General SOP Library"
     )
@@ -116,7 +117,7 @@ def run_chatbot(
         ticket_ref=ticket_ref,
     )
 
-    response = client.chat.completions.create(
+    response = get_client().chat.completions.create(
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME"),
         max_tokens=500,
         temperature=0.1,
@@ -126,7 +127,7 @@ def run_chatbot(
         ],
     )
 
-    reply          = response.choices[0].message.content
+    reply           = response.choices[0].message.content
     user_turn_count = sum(1 for m in messages if m["role"] == "user")
 
     print(f"✅ [AGENT 4] Response | Turn {user_turn_count} | Source: {sop_source}")
@@ -136,27 +137,3 @@ def run_chatbot(
         "sop_source": sop_source,
         "turn":       user_turn_count,
     }
-
-
-if __name__ == "__main__":
-    print("\n── AGENT 4 STANDALONE TEST ──")
-    conversation = [
-        {"role": "user", "content": "I've just received the alert. Where do I start?"},
-    ]
-    result = run_chatbot(
-        messages=conversation,
-        equipment_id="PUMP_1",
-        fault_context="Critical · High Vibration · 9.3 mm/s",
-    )
-    print(f"\nSource: {result['sop_source']} | Turn: {result['turn']}")
-    print(f"\nResponse:\n{result['reply']}")
-
-    conversation.append({"role": "assistant", "content": result["reply"]})
-    conversation.append({"role": "user", "content": "Done, I've isolated the pump. What next?"})
-
-    result2 = run_chatbot(
-        messages=conversation,
-        equipment_id="PUMP_1",
-        fault_context="Critical · High Vibration · 9.3 mm/s",
-    )
-    print(f"\nFollow-up:\n{result2['reply']}")
