@@ -1,4 +1,6 @@
 
+<img width="100" alt="L'Avenir Logo" src="https://github.com/user-attachments/assets/026a7ffa-88a0-4753-ab4d-57c75e774af8" />
+
 # L'Avenir – Smart Maintenance Operational Framework (SMOF)
 ### 🚀 Azure Hackathon Project
 
@@ -26,12 +28,13 @@ An engineer receives step-by-step guidance drawn from relevant SOPs via RAG. On 
 
 ---
 
-## Agent Pipeline
+## Agent Pipeline 🤖
 
 | Agent | Role |
 |-------|------|
 | **Agent 1 — Predictive Monitor** | Analyses sensor telemetry rows, classifies fault type and severity (Critical/Warning), scores confidence 0–100, produces a one-sentence issue summary |
-| **Agent 3 — SOP Retrieval** | Retrieves relevant Standard Operating Procedures from the Lakehouse using RAG |
+| **Agent 2 — Ticketing** | Generates ServiceNow-style work orders from approved anomalies: deterministic ticket ID, priority mapping, AI-written short description and description, category inference, and urgency note |
+| **Agent 3 — SOP Retrieval & Guidance** | Loads equipment manuals as PDFs, chunks them with overlap, routes retrieval by equipment category (pump, HVAC, chiller, motor, drive), scores chunks via keyword matching, and delivers mobile-optimised step-by-step guidance grounded strictly in retrieved SOP content |
 | **Agent 4 — SOP Chat** | Provides interactive, step-by-step maintenance guidance to engineers via chatbot |
 | **Audit Agent** | Consolidates maintenance logs and generates a structured audit register |
 
@@ -45,14 +48,23 @@ Synthetic time-series telemetry is generated across 5 sensor types (temperature,
 ### Predictive Agent (`predictive_agent.py`)
 Calls Azure OpenAI with a tightly engineered system prompt that enforces non-negotiable severity rules — `calculated_status: "Red"` maps to `"Critical"` with zero exceptions. The agent returns structured JSON covering fault type, fault value, confidence score, issue summary, and routing metadata. Truncated JSON responses are handled with a regex-based partial recovery fallback before raising an error.
 
+### Ticketing Agent (`agent2_ticketing.py`)
+Triggered after a human dispatcher approves an anomaly. Generates a deterministic ticket ID via MD5 hash of equipment ID, department, and UTC hour — ensuring idempotency within the same dispatch window. Severity is mapped to a ServiceNow-style priority (`Critical → P1 - Urgent`, `Warning → P2 - High`). Azure OpenAI is prompted to produce a structured work order (short description capped at 12 words, 3–4 sentence operational description, fault category, and a timed urgency note). If the GPT call fails, a fully formed fallback ticket is assembled locally from deterministic fields and keyword-based department-to-category inference — the API never returns an error to the caller.
+
+### RAG / SOP Agent (`rag_agent.py`)
+Implements a custom retrieval pipeline without a vector database. PDFs are loaded from the `manuals/` directory using `PyMuPDF` (`fitz`) and chunked into 400-word windows with 80-word overlap to preserve context across boundaries. Each PDF is categorised by filename fragment matching into one of six equipment types (pump, HVAC, chiller, cooling tower, motor, drive), and chunks are indexed by category. At query time, the best-fit category is selected by scoring the query against each category's keyword list, with an additional +3.0 boost if the equipment ID directly matches category fragments. The top-k chunks are then scored by word overlap with the query and passed to Azure OpenAI as context. The system prompt enforces strict SOP grounding — the agent must not invent steps, must quote exact threshold values, must use numbered steps for action sequences, and must cap responses at 200 words for field engineers on mobile. If the relevant SOP does not cover the question, it returns a fixed escalation message rather than hallucinating an answer. Every completed job ends with a mandatory D365 evidence logging reminder.
+
+### FastAPI Backend (`main.py`)
+Full REST API with 12+ endpoints covering the entire workflow. Sensor data is loaded, threshold-classified, and trend-calculated (comparing current vs previous reading rank per equipment) before being sent to Agent 1. The scan endpoint selects the latest reading per equipment across status buckets, merges with department contact data, and injects Healthy rows deterministically without involving the AI. A keyword-based `EQUIPMENT_DEPT_MAP` resolves equipment IDs to department codes when the department isn't explicit. Session state is held in an in-memory `_SESSION` dict shared across requests — acting as a lightweight shift-scoped state store for anomalies, work order history, escalations, completions, and the last scan timestamp. Manager-declined anomalies are re-injected into the Kanban with a prefixed explanation. The built React SPA is served statically from `/static`, with API prefix detection to avoid SPA routing conflicts.
+
 ### Fabric Data Client (`fabric_client.py`)
 Connects to the Microsoft Fabric SQL Analytics Endpoint using `pyodbc` with `ActiveDirectoryServicePrincipal` auth — no interactive login. Provides a graceful CSV fallback for local development and demo environments when Fabric credentials are absent. Also handles audit log writes (DDL + DML with `IF NOT EXISTS` table creation), multi-source sensor data deduplication, and PDF SOP downloads from the Fabric Lakehouse via `azure-storage-file-datalake` / OneLake.
 
 ### Role-Based Access Control (`roles.py`)
 Endpoint-level permissions enforced via a FastAPI dependency. Five human roles (dispatcher, manager, engineer, auditor, admin) and one agent role (`agent.call`), each mapped to a precise set of permitted endpoints. Agent service principals are additionally validated against a registry of known client IDs loaded from environment variables, preventing spoofed agent calls.
 
-### Triage Dashboard (React + Vite)
-React 19 frontend authenticating via Microsoft Entra ID using `@azure/msal-browser` and `@azure/msal-react`. Provides the dispatcher and manager UI for reviewing flagged anomalies, approving or escalating tickets, and monitoring session state.
+### Multi-Role React Frontend (`App.jsx`)
+React 19 SPA authenticating via Microsoft Entra ID with `acquireTokenSilent` — the role is extracted directly from JWT token claims and used to route the user into their specific view at login. Each role sees an entirely different interface: dispatchers and managers get the Kanban triage board; engineers land directly in the Engineer Workbench; auditors see only the Audit dashboard. The Kanban board renders three columns (Optimal / Warning / Critical) with skeleton loading cards during scans, animated KPI counters, and per-anomaly confidence bars. The Engineer Workbench implements a three-stage job flow (Accept → In Progress → Complete), with file upload for evidence attachment and an inline SOP chat panel per ticket. The Audit dashboard includes five automated compliance checks, a DonutChart compliance score with cubic-bezier animation, sortable records table, AI narrative, and CSV export. A Shift Handover view generates an AI-written structured report (under 200 words). Session state is polled every 30 seconds so engineers see new tickets without refreshing. Managers can clear the session to reset the Kanban for a new shift.
 
 ---
 
@@ -70,7 +82,7 @@ React 19 frontend authenticating via Microsoft Entra ID using `@azure/msal-brows
 
 ---
 
-## How to Run
+## How to Run 🛠️
 
 ### Backend
 
@@ -102,11 +114,11 @@ npm install
 npm run dev
 ```
 
-Set `VITE_ENTRA_CLIENT_ID` in your environment before running.
+Set `VITE_ENTRA_CLIENT_ID` and `VITE_ENTRA_TENANT_ID` in your environment before running.
 
 ---
 
-## Projected Impact (from Business Case)
+## Projected Impact (from Business Case) 🎯
 
 | KPI | Target |
 |-----|--------|
