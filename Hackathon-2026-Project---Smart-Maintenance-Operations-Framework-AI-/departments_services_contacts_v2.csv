@@ -1,0 +1,81 @@
+department_id,department_name,service_name,feature,contact_name,role,email,phone,preferred_channel,severity_scope
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 1,On-call Engineer,hvac.engineer1@demo-org.com,+44-7700-910001,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 2,On-call Engineer,hvac.engineer2@demo-org.com,+44-7700-910002,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 3,On-call Engineer,hvac.engineer3@demo-org.com,+44-7700-910003,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 4,On-call Engineer,hvac.engineer4@demo-org.com,+44-7700-910004,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 5,On-call Engineer,hvac.engineer5@demo-org.com,+44-7700-910005,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 6,Duty Manager,hvac.engineer6@demo-org.com,+44-7700-910006,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 7,Duty Manager,hvac.engineer7@demo-org.com,+44-7700-910007,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 8,Duty Manager,hvac.engineer8@demo-org.com,+44-7700-910008,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 9,Duty Manager,hvac.engineer9@demo-org.com,+44-7700-910009,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,temperature_c,HVAC Engineer 10,Duty Manager,hvac.engineer10@demo-org.com,+44-7700-910010,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 11,On-call Engineer,hvac.engineer11@demo-org.com,+44-7700-910011,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 12,On-call Engineer,hvac.engineer12@demo-org.com,+44-7700-910012,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 13,On-call Engineer,hvac.engineer13@demo-org.com,+44-7700-910013,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 14,On-call Engineer,hvac.engineer14@demo-org.com,+44-7700-910014,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 15,On-call Engineer,hvac.engineer15@demo-org.com,+44-7700-910015,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 16,Duty Manager,hvac.engineer16@demo-org.com,+44-7700-910016,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 17,Duty Manager,hvac.engineer17@demo-org.com,+44-7700-910017,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 18,Duty Manager,hvac.engineer18@demo-org.com,+44-7700-910018,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 19,Duty Manager,hvac.engineer19@demo-org.com,+44-7700-910019,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,humidity_pct,HVAC Engineer 20,Duty Manager,hvac.engineer20@demo-org.com,+44-7700-910020,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 21,On-call Engineer,hvac.engineer21@demo-org.com,+44-7700-910021,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 22,On-call Engineer,hvac.engineer22@demo-org.com,+44-7700-910022,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 23,On-call Engineer,hvac.engineer23@demo-org.com,+44-7700-910023,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 24,On-call Engineer,hvac.engineer24@demo-org.com,+44-7700-910024,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 25,On-call Engineer,hvac.engineer25@demo-org.com,+44-7700-910025,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 26,Duty Manager,hvac.engineer26@demo-org.com,+44-7700-910026,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 27,Duty Manager,hvac.engineer27@demo-org.com,+44-7700-910027,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 28,Duty Manager,hvac.engineer28@demo-org.com,+44-7700-910028,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 29,Duty Manager,hvac.engineer29@demo-org.com,+44-7700-910029,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,pressure_bar,HVAC Engineer 30,Duty Manager,hvac.engineer30@demo-org.com,+44-7700-910030,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 31,On-call Engineer,hvac.engineer31@demo-org.com,+44-7700-910031,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 32,On-call Engineer,hvac.engineer32@demo-org.com,+44-7700-910032,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 33,On-call Engineer,hvac.engineer33@demo-org.com,+44-7700-910033,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 34,On-call Engineer,hvac.engineer34@demo-org.com,+44-7700-910034,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 35,On-call Engineer,hvac.engineer35@demo-org.com,+44-7700-910035,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 36,Duty Manager,hvac.engineer36@demo-org.com,+44-7700-910036,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 37,Duty Manager,hvac.engineer37@demo-org.com,+44-7700-910037,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 38,Duty Manager,hvac.engineer38@demo-org.com,+44-7700-910038,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 39,Duty Manager,hvac.engineer39@demo-org.com,+44-7700-910039,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,vibration_mm_s,HVAC Engineer 40,Duty Manager,hvac.engineer40@demo-org.com,+44-7700-910040,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 41,On-call Engineer,hvac.engineer41@demo-org.com,+44-7700-910041,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 42,On-call Engineer,hvac.engineer42@demo-org.com,+44-7700-910042,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 43,On-call Engineer,hvac.engineer43@demo-org.com,+44-7700-910043,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 44,On-call Engineer,hvac.engineer44@demo-org.com,+44-7700-910044,Email,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 45,On-call Engineer,hvac.engineer45@demo-org.com,+44-7700-910045,Teams,Yellow+Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 46,Duty Manager,hvac.engineer46@demo-org.com,+44-7700-910046,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 47,Duty Manager,hvac.engineer47@demo-org.com,+44-7700-910047,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 48,Duty Manager,hvac.engineer48@demo-org.com,+44-7700-910048,Email,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 49,Duty Manager,hvac.engineer49@demo-org.com,+44-7700-910049,Teams,Red
+HVAC,HVAC Operations,Heating Ventilation Air Conditioning,power_kw,HVAC Engineer 50,Duty Manager,hvac.engineer50@demo-org.com,+44-7700-910050,Email,Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 100,On-call Engineer,elec.engineer100@demo-org.com,+44-7700-910100,Teams,Yellow+Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 101,On-call Engineer,elec.engineer101@demo-org.com,+44-7700-910101,Email,Yellow+Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 102,On-call Engineer,elec.engineer102@demo-org.com,+44-7700-910102,Teams,Yellow+Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 103,On-call Engineer,elec.engineer103@demo-org.com,+44-7700-910103,Email,Yellow+Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 104,On-call Engineer,elec.engineer104@demo-org.com,+44-7700-910104,Teams,Yellow+Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 105,Duty Manager,elec.engineer105@demo-org.com,+44-7700-910105,Email,Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 106,Duty Manager,elec.engineer106@demo-org.com,+44-7700-910106,Teams,Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 107,Duty Manager,elec.engineer107@demo-org.com,+44-7700-910107,Email,Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 108,Duty Manager,elec.engineer108@demo-org.com,+44-7700-910108,Teams,Red
+ELEC,Electrical,Power Distribution,power_kw,Electrical Engineer 109,Duty Manager,elec.engineer109@demo-org.com,+44-7700-910109,Email,Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 200,On-call Engineer,mech.engineer200@demo-org.com,+44-7700-910200,Teams,Yellow+Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 201,On-call Engineer,mech.engineer201@demo-org.com,+44-7700-910201,Email,Yellow+Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 202,On-call Engineer,mech.engineer202@demo-org.com,+44-7700-910202,Teams,Yellow+Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 203,On-call Engineer,mech.engineer203@demo-org.com,+44-7700-910203,Email,Yellow+Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 204,On-call Engineer,mech.engineer204@demo-org.com,+44-7700-910204,Teams,Yellow+Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 205,Duty Manager,mech.engineer205@demo-org.com,+44-7700-910205,Email,Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 206,Duty Manager,mech.engineer206@demo-org.com,+44-7700-910206,Teams,Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 207,Duty Manager,mech.engineer207@demo-org.com,+44-7700-910207,Email,Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 208,Duty Manager,mech.engineer208@demo-org.com,+44-7700-910208,Teams,Red
+MECH,Mechanical,Rotating Equipment,vibration_mm_s,Mechanical Engineer 209,Duty Manager,mech.engineer209@demo-org.com,+44-7700-910209,Email,Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 300,On-call Engineer,bms.engineer300@demo-org.com,+44-7700-910300,Teams,Yellow+Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 301,On-call Engineer,bms.engineer301@demo-org.com,+44-7700-910301,Email,Yellow+Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 302,On-call Engineer,bms.engineer302@demo-org.com,+44-7700-910302,Teams,Yellow+Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 303,On-call Engineer,bms.engineer303@demo-org.com,+44-7700-910303,Email,Yellow+Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 304,On-call Engineer,bms.engineer304@demo-org.com,+44-7700-910304,Teams,Yellow+Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 305,Duty Manager,bms.engineer305@demo-org.com,+44-7700-910305,Email,Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 306,Duty Manager,bms.engineer306@demo-org.com,+44-7700-910306,Teams,Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 307,Duty Manager,bms.engineer307@demo-org.com,+44-7700-910307,Email,Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 308,Duty Manager,bms.engineer308@demo-org.com,+44-7700-910308,Teams,Red
+BMS,Building Systems,BMS & Sensors,temperature_c,Building Engineer 309,Duty Manager,bms.engineer309@demo-org.com,+44-7700-910309,Email,Red
